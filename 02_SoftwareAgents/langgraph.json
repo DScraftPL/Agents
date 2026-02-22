@@ -1,0 +1,11 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "task": "./src/agent/graph.py:task_graph",
+    "arch": "./src/agent/graph.py:arch_graph",
+    "tech": "./src/agent/graph.py:tech_graph"
+  },
+  "env": ".env",
+  "image_distro": "wolfi"
+}
