@@ -14,11 +14,13 @@ from typing import Any, Dict, Literal, Optional
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph
-from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage, AIMessage
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
 
 from functools import partial
+import json, re
+import subprocess
 
 # from src.agent.prompts import SYSTEM_PROMPTS
 
@@ -91,7 +93,15 @@ SYSTEM_PROMPTS = {
 
     Disregard any conversation, which is not about software engineering.
 
-    Provide only code, ready to save to file. 
+    Generate all files necessary to finish task. Return it in JSON array:
+    [
+      {
+        "filename": <filename1>, "content": <code> },
+        ... 
+      }
+    ]
+
+    Return only this JSON, no other text. 
   """,
     "code_review": """
     You are software engineer asistant.
@@ -109,7 +119,8 @@ SYSTEM_PROMPTS = {
     "docker": """
     You are software engineer asistant.
 
-    Your goal is to provide Docker commands, based on user input. 
+    Your goal is to provide Docker commands to start or stop specific container.
+    Your command has to fulfil this regex: "^docker (start|stop) ([a-zA-Z0-9_.-]+)$"
     
     Disregard any conversation, which is not about software engineering.
 
@@ -182,9 +193,58 @@ node_define_task = partial(basic_node, prompt_key="define_task", write_file="TAS
 node_system_architecture = partial(basic_node, prompt_key="system_architecture", write_file="ARCHITECTURE.md", read_files=["TASK.md", "ARCHITECTURE.md"])
 node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", write_file="TECHNOLOGY.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"])
 # node_implementation = partial(basic_node, prompt_key="implementation", write_file="TASK.md", read_files=[])
-node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["CODE.md"])
-node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
 
+# read more files
+node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md", "CODE.md"])
+
+# docker to terminal
+# node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
+
+def node_docker(state: State, config: RunnableConfig):
+  content = state["messages"][-1]
+  thread_id = config["configurable"]["thread_id"]
+
+  COMMAND_REGEX = r"^docker (start|stop) ([a-zA-Z0-9_.-]+)$"
+
+  messages = [
+    SystemMessage(SYSTEM_PROMPTS["docker"]),
+    content
+  ]
+
+  response = llm.invoke(messages)
+
+  command = response.content.strip()
+
+  match = re.match(COMMAND_REGEX, command)
+
+  if not match:
+    return {
+        "messages": [
+            AIMessage(content="Invalid or unsafe docker command.")
+        ]
+    }
+
+  action, container = match.groups()
+
+  try:
+    result = subprocess.run(
+        ["docker", action, container],
+        capture_output=True,
+        text=True
+    )
+    output = result.stdout + result.stderr
+
+  except Exception as e:
+    output = str(e)
+
+  return {
+    "messages": [
+      response,
+      AIMessage(content=f"Execution result:\n{output}")
+    ]
+  }
+
+# Multiple files
 def node_implementation(state: State, config: RunnableConfig):   
   content = state["messages"][-1]
   thread_id = config["configurable"]["thread_id"]
@@ -208,6 +268,19 @@ def node_implementation(state: State, config: RunnableConfig):
   write_file = "CODE.md"
 
   save_file(write_file, response.content, thread_id)
+
+  raw = re.sub(r"```json|```", "", response.content).strip()
+  files = json.loads(raw)
+
+  directory = f"static/code/{thread_id}/"
+
+  for file in files:
+    filepath = os.path.join(directory, file["filename"])
+    
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    
+    with open(filepath, "w") as f:
+        f.write(file["content"])
 
   return {"messages": [response]}
 
