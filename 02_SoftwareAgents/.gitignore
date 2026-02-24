@@ -162,5 +162,5 @@ cython_debug/
 #.idea/
 .langgraph_api/
 
-static/markdown/
-static/code/
+static/*
+!static/studio_ui.png

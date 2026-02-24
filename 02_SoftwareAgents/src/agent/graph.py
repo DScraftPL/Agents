@@ -81,15 +81,13 @@ SYSTEM_PROMPTS = {
     Provide output in Markdown, ready to save.
   """,
     "implementation": """
-    You are software engineer asistant.
+    You are software engineer.
     
     User will provide you with:
     - task,
     - planned architecture, 
     - technology
     If any of categories are missing, ask user about it.
-    
-    Your goal is to implement this task in given technology, following architecture.
 
     Disregard any conversation, which is not about software engineering.
 
@@ -101,7 +99,7 @@ SYSTEM_PROMPTS = {
       }
     ]
 
-    Return only this JSON, no other text. 
+    Return ONLY JSON, no other text.
   """,
     "code_review": """
     You are software engineer asistant.
@@ -146,7 +144,7 @@ SYSTEM_PROMPTS = {
 llm = ChatOpenAI(model="gpt-4o")
 
 def read_file(file_name: str, thread_id: str) -> str:
-  file_name = f"static/markdown/{thread_id}/{file_name}"
+  file_name = f"static/{thread_id}/markdown/{file_name}"
   if os.path.exists(file_name):
     with open(file_name, "r") as f:
       file_content = f.read()
@@ -155,7 +153,7 @@ def read_file(file_name: str, thread_id: str) -> str:
     raise RuntimeError("File cannot be read")
 
 def save_file(file_name: str, content: str, thread_id: str):
-    directory = f"static/markdown/{thread_id}"
+    directory = f"static/{thread_id}/markdown/"
     os.makedirs(directory, exist_ok=True) 
     file_name = os.path.join(directory, file_name)
     with open(file_name, "w") as f:
@@ -269,10 +267,11 @@ def node_implementation(state: State, config: RunnableConfig):
 
   save_file(write_file, response.content, thread_id)
 
-  raw = re.sub(r"```json|```", "", response.content).strip()
+  match = re.search(r'\[.*\]', response.content, re.DOTALL)
+  raw = match.group(0) if match else response.content
   files = json.loads(raw)
 
-  directory = f"static/code/{thread_id}/"
+  directory = f"static/{thread_id}/code/"
 
   for file in files:
     filepath = os.path.join(directory, file["filename"])
