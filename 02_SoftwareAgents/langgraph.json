@@ -4,7 +4,11 @@
   "graphs": {
     "task": "./src/agent/graph.py:task_graph",
     "arch": "./src/agent/graph.py:arch_graph",
-    "tech": "./src/agent/graph.py:tech_graph"
+    "tech": "./src/agent/graph.py:tech_graph",
+    "impl": "./src/agent/graph.py:impl_graph",
+    "code": "./src/agent/graph.py:code_graph",
+    "dock": "./src/agent/graph.py:dock_graph",
+    "main": "./src/agent/graph.py:main_graph"
   },
   "env": ".env",
   "image_distro": "wolfi"
