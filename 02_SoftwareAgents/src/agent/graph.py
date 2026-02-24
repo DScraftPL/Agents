@@ -22,7 +22,8 @@ from src.agent.prompts import SYSTEM_PROMPTS
 
 llm = ChatOpenAI(model="gpt-4o")
 
-def read_file(file_name: str):
+def read_file(file_name: str) -> str:
+  file_name = "static/" + file_name
   if os.path.exists(file_name):
     with open(file_name, "r") as f:
       file_content = f.read()
@@ -31,6 +32,7 @@ def read_file(file_name: str):
   raise RuntimeError("File cannot be read")
 
 def save_file(file_name: str, content: str):
+  file_name = "static/" + file_name
   with open(file_name, "w") as f:
     f.write(content)
 
@@ -38,10 +40,9 @@ def save_file(file_name: str, content: str):
   
 @dataclass
 class State(MessagesState):
-  mode: Literal["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager"] | None
-  summary: str | None
+  mode: Literal["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager"]
 
-def basic_node(state: State, prompt_key: str) -> MessagesState:
+def basic_node(state: State, prompt_key: str, read_files: list[str], write_file: str) -> MessagesState:
   content = state["messages"][-1]
 
   messages = [
@@ -49,16 +50,50 @@ def basic_node(state: State, prompt_key: str) -> MessagesState:
     content
   ]
 
+  for file_to_read in read_files:
+    try:
+      file_content = read_file(file_to_read)
+      messages.append(HumanMessage(file_content))
+    except: 
+      pass
+
   response = llm.invoke(messages)
+
+  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"))
 
   return {"messages": [response]}
 
-node_define_task = partial(basic_node, prompt_key="define_task")
-node_system_architecture = partial(basic_node, prompt_key="system_architecture")
-node_technology_chooser = partial(basic_node, prompt_key="technology_chooser")
-node_implementation = partial(basic_node, prompt_key="implementation")
-node_code_review = partial(basic_node, prompt_key="code_review")
-node_docker = partial(basic_node, prompt_key="docker")
+node_define_task = partial(basic_node, prompt_key="define_task", write_file="TASK.md", read_files=["TASK.md"])
+node_system_architecture = partial(basic_node, prompt_key="system_architecture", write_file="ARCHITECTURE.md", read_files=["TASK.md", "ARCHITECTURE.md"])
+node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", write_file="TECHNOLOGY.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"])
+# node_implementation = partial(basic_node, prompt_key="implementation", write_file="TASK.md", read_files=[])
+node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["CODE.md"])
+node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
+
+def node_implementation(state: State):   
+  content = state["messages"][-1]
+
+  messages = [
+    SystemMessage(SYSTEM_PROMPTS["implementation"]),
+    content
+  ]
+
+  read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]
+
+  for file_to_read in read_files:
+    try:
+      file_content = read_file(file_to_read)
+      messages.append(HumanMessage(file_content))
+    except: 
+      pass
+
+  response = llm.invoke(messages)
+
+  write_file = "CODE.md"
+
+  save_file(write_file, response.content)
+
+  return {"messages": [response]}
 
 def node_router(state: MessagesState) -> State:
   content = state["messages"][-1]

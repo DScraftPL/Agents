@@ -1,3 +1,0 @@
-# Problem Definition
-
-Create an application that outputs the phrase "Hello, World!" to demonstrate a basic understanding of the software development process, user interface design, and program execution. This application serves as an introductory exercise for new developers to gain familiarity with the basic concepts of programming, such as syntax, compilation, and execution flow. The primary goal is to establish a foundational grasp of how software is structured and executed.
