@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 
+from langchain_core.runnables import RunnableConfig
+
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional
 
@@ -22,19 +24,21 @@ from src.agent.prompts import SYSTEM_PROMPTS
 
 llm = ChatOpenAI(model="gpt-4o")
 
-def read_file(file_name: str) -> str:
-  file_name = "static/" + file_name
+def read_file(file_name: str, thread_id: str) -> str:
+  file_name = f"static/markdown/{thread_id}/{file_name}"
   if os.path.exists(file_name):
     with open(file_name, "r") as f:
       file_content = f.read()
       return file_content
-    
-  raise RuntimeError("File cannot be read")
+  else:
+    raise RuntimeError("File cannot be read")
 
-def save_file(file_name: str, content: str):
-  file_name = "static/" + file_name
-  with open(file_name, "w") as f:
-    f.write(content)
+def save_file(file_name: str, content: str, thread_id: str):
+    directory = f"static/markdown/{thread_id}"
+    os.makedirs(directory, exist_ok=True) 
+    file_name = os.path.join(directory, file_name)
+    with open(file_name, "w") as f:
+        f.write(content)
 
 # for input and output, MessageState
   
@@ -42,8 +46,9 @@ def save_file(file_name: str, content: str):
 class State(MessagesState):
   mode: Literal["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager"]
 
-def basic_node(state: State, prompt_key: str, read_files: list[str], write_file: str) -> MessagesState:
+def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_files: list[str], write_file: str) -> MessagesState:
   content = state["messages"][-1]
+  thread_id = config["configurable"]["thread_id"]
 
   messages = [
     SystemMessage(SYSTEM_PROMPTS[prompt_key]),
@@ -52,14 +57,14 @@ def basic_node(state: State, prompt_key: str, read_files: list[str], write_file:
 
   for file_to_read in read_files:
     try:
-      file_content = read_file(file_to_read)
+      file_content = read_file(file_to_read, thread_id)
       messages.append(HumanMessage(file_content))
     except: 
       pass
 
   response = llm.invoke(messages)
 
-  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"))
+  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"), thread_id)
 
   return {"messages": [response]}
 
@@ -70,8 +75,9 @@ node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", w
 node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["CODE.md"])
 node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
 
-def node_implementation(state: State):   
+def node_implementation(state: State, config: RunnableConfig):   
   content = state["messages"][-1]
+  thread_id = config["configurable"]["thread_id"]
 
   messages = [
     SystemMessage(SYSTEM_PROMPTS["implementation"]),
@@ -82,7 +88,7 @@ def node_implementation(state: State):
 
   for file_to_read in read_files:
     try:
-      file_content = read_file(file_to_read)
+      file_content = read_file(file_to_read, thread_id)
       messages.append(HumanMessage(file_content))
     except: 
       pass
@@ -91,7 +97,7 @@ def node_implementation(state: State):
 
   write_file = "CODE.md"
 
-  save_file(write_file, response.content)
+  save_file(write_file, response.content, thread_id)
 
   return {"messages": [response]}
 

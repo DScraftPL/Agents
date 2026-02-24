@@ -1,1 +1,0 @@
-cker run [OPTIONS] IMAGE_NAME
