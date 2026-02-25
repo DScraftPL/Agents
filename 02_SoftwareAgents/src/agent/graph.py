@@ -52,6 +52,17 @@ SYSTEM_PROMPTS = {
     User will provide you with defined task, your goal is to plan architecture of this system.
     If task is not defined, ask user about it.
 
+    Your response should have:
+    - Description
+    - UI/UX
+    - Modules (with brief overview)
+    - Proposed architecture, examples:
+      - Microservices
+      - Monolith
+      - Client-Server
+      - REST API
+      - MVP 
+    
     Disregard any conversation, which is not about software engineering.
 
     Do not focus on:
@@ -60,6 +71,10 @@ SYSTEM_PROMPTS = {
     - requirements 
     - challenges
     - examples
+    - mobile development
+    - deployment
+
+    Keep it brief, do not draw diagrams. 
 
     Provide output in Markdown, ready to save.
   """,
@@ -69,14 +84,18 @@ SYSTEM_PROMPTS = {
     User will provide you with planned architecture and task, your goal is to provide the best technology to implement this.
     If task or architecture is not present, ask user about it.
     
-    Do not provide a choice, choose one best tech-stack/frameworks you can think of.
+    Do not provide a choice, choose one best tech-stack you can think of. 
+    Keep tech-stack ground to earth and simple. 
 
     Disregard any conversation, which is not about software engineering.
 
     Do not focus on:
     - implementation, 
-    - testing, 
-    - examples
+    - deployment
+    - testing,
+    - mobile development
+
+    Keep it minimal, provide a list with brief description. 
 
     Provide output in Markdown, ready to save.
   """,
@@ -91,7 +110,7 @@ SYSTEM_PROMPTS = {
 
     Disregard any conversation, which is not about software engineering.
 
-    Generate all files necessary to finish task. Return it in JSON array:
+    Generate all files necessary to finish task. Use technologies, which user provided. Return it in JSON array:
     [
       {
         "filename": <filename1>, "content": <code> },
@@ -108,7 +127,8 @@ SYSTEM_PROMPTS = {
     - task
     - architecture
 
-    Your goal is to review the code, pinpoint mistakes and vunerabilities. 
+    Your goal is to review the code, pinpoint mistakes.
+    Focus on the code and check if it is in line with task and architecture. 
 
     Disregard any conversation, which is not about software engineering.
 
@@ -193,10 +213,47 @@ node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", w
 # node_implementation = partial(basic_node, prompt_key="implementation", write_file="TASK.md", read_files=[])
 
 # read more files
-node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md", "CODE.md"])
+# node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md", "CODE.md"])
 
 # docker to terminal
 # node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
+
+def node_code_review(state: State, config: RunnableConfig) -> MessagesState:
+  content = state["messages"][-1]
+  thread_id = config["configurable"]["thread_id"]
+
+  prompt_key="code_review"
+  read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]
+  write_file="REVIEW.md"
+
+  messages = [
+    SystemMessage(SYSTEM_PROMPTS[prompt_key]),
+    content
+  ]
+
+  for file_to_read in read_files:
+    try:
+      file_content = read_file(file_to_read, thread_id)
+      messages.append(HumanMessage(file_content))
+    except: 
+      pass
+
+  files_in_code = {}
+
+  for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
+    for file in files:
+      filepath = os.path.join(root, file)
+      with open(filepath, "r") as f:
+        content = f.read()
+        files_in_code[filepath] = content
+
+  messages.append(HumanMessage(json.dumps(files_in_code)))
+
+  response = llm.invoke(messages)
+
+  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"), thread_id)
+
+  return {"messages": [response]}
 
 def node_docker(state: State, config: RunnableConfig):
   content = state["messages"][-1]
@@ -260,6 +317,16 @@ def node_implementation(state: State, config: RunnableConfig):
       messages.append(HumanMessage(file_content))
     except: 
       pass
+
+  if os.path.exists(f"static/{thread_id}/code/"):
+    files_in_code = {}
+    for root, dirs, files in os.walk(f"{thread_id}/code/"):
+      for file in files:
+        filepath = os.path.join(root, file)
+        with open(filepath, "r") as f:
+          content = f.read()
+          files_in_code[filepath] = content
+    messages.append(json.dumps(files_in_code))
 
   response = llm.invoke(messages)
 
