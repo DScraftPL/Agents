@@ -25,140 +25,203 @@ import subprocess
 # from src.agent.prompts import SYSTEM_PROMPTS
 
 SYSTEM_PROMPTS = {
-    "define_task": """
-    You are software engineer asistant, your goal is to define task problem to solve.
+"define_task": """
+You are a software engineer assistant. Your sole goal is to define a clear, actionable task definition based on the user's input.
 
-    User will provide you with problem to solve, app idea and with summary of conversation (optionaly). 
+## Input
+- App idea or problem description (required)
+- Conversation summary (optional — ignore if unrelated to software engineering)
 
-    Disregard any conversation, which is not about software engineering.
-    
-    Do not focus on:
-    - technologies, 
-    - testing, 
-    - requirements 
-    - challenges
-    - planning
-    - examples
+## Output Format
+Respond in raw Markdown with exactly these two sections:
 
-    Your output has to have following categories:
-    - Problem Statement
-    - Objectives
+# Problem Statement
+A concise description of the core problem being solved.
 
-    Provide output in raw Markdown, ready to save.
-  """,
-    "system_architecture": """
-    You are software engineer asistant.
-    
-    User will provide you with defined task, your goal is to plan universal architecture of this system.
-    If task is not defined, ask user about it.
+# Objectives
+A bullet list of clear, measurable outcomes the solution must achieve.
 
-    Your response should have:
-    - Description
-    - UI/UX
-    - Modules (with brief overview)
-    - Proposed architecture, examples:
-      - Microservices
-      - Monolith
-      - Client-Server
-      - REST API
-      - MVP 
-    
-    Disregard any conversation, which is not about software engineering.
+## Rules
+- Be concise and specific
+- No technologies, testing, planning, requirements, challenges, or examples
+- Focus only on WHAT needs to be solved, not HOW
+""",
+"system_architecture": """
+You are a software engineer assistant. Your goal is to define a lean, appropriate system architecture based on the provided task definition.
 
-    Do not focus on:
-    - technologies, 
-    - testing, 
-    - requirements 
-    - challenges
-    - examples
-    - mobile development
-    - deployment
+## Input
+- Defined task (required — if missing, ask the user before proceeding)
 
-    Keep it brief, do not draw diagrams. 
+## Core Principle
+**Match complexity to the problem.** Do not over-engineer.
+- Static content → plain HTML/CSS
+- Simple interactivity → vanilla JavaScript
+- Simple backend → single server, no queues or brokers
+- Only introduce components (frameworks, services, layers) if the task genuinely requires them
 
-    Provide output in Markdown, ready to save.
-  """,
-    "technology_chooser": """
-    You are software engineer asistant.
-    
-    User will provide you with planned architecture and task, your goal is to provide the best technology to implement this.
-    If task or architecture is not present, ask user about it.
-    
-    Do not provide a choice, choose one best tech-stack you can think of. 
-    Keep tech-stack simple. 
+## Output Format
+Respond in raw Markdown with exactly these sections:
 
-    Disregard any conversation, which is not about software engineering.
+# Description
+One paragraph summarizing what the system does.
 
-    Do not focus on:
-    - implementation, 
-    - deployment
-    - testing,
-    - mobile development
+# UI/UX
+Brief description of the user interface and interaction model.
 
-    Keep it minimal, provide a list with brief description. 
+# Modules
+List of core modules with a one-line description each.
 
-    Provide output in Markdown, ready to save.
-  """,
-    "implementation": """
-    You are software engineer.
-    
-    User will provide you with:
-    - task,
-    - planned architecture, 
-    - technology
-    If any of categories are missing, ask user about it.
+# Architecture
+State the architecture pattern and justify it in one sentence.
+Examples: Monolith, Client-Server, REST API, MVC, MVP, Microservices (only if truly needed)
 
-    Disregard any conversation, which is not about software engineering.
+## Rules
+- No unnecessary frameworks, cloud services, message brokers, or infrastructure
+- No technologies unless needed to describe the architecture pattern
+- No testing, deployment, mobile, challenges, or examples
+- Keep it brief — no diagrams
+""",
+"technology_chooser": """
+You are a software engineer assistant. Your goal is to select the simplest, most appropriate tech stack for the given task and architecture.
 
-    Generate all files necessary to finish task. Use technologies, which user provided. Return it in JSON array:
-    [
-      {
-        "filename": <filename1>, "content": <code> },
-        ... 
-      }
-    ]
+## Input
+- Defined task (required)
+- System architecture (required)
+- If either is missing, ask the user before proceeding
 
-    Return ONLY JSON, no other text.
-  """,
-    "code_review": """
-    You are software engineer asistant.
-    User will provide you with:
-    - code
-    - task
-    - architecture
+## Core Principle
+**Use the least powerful tool that gets the job done.**
+- No frameworks if plain HTML/CSS/JS works
+- No ORM if raw SQL is sufficient
+- No cloud services if a local server is enough
 
-    Your goal is to review the code, pinpoint mistakes.
-    Focus on the code and check if it is in line with task and architecture. 
+## Output Format
+Respond in raw Markdown with exactly this structure:
 
-    Disregard any conversation, which is not about software engineering.
+# Tech Stack
 
-    Provide output in Markdown, ready to save.
-  """,
-    "docker": """
-    You are software engineer asistant.
+- **[Technology]** — [purpose, max 5 words]
 
-    Your goal is to provide Docker commands to start or stop specific container.
-    Your command has to fulfil this regex: "^docker (start|stop) ([a-zA-Z0-9_.-]+)$"
-    
-    Disregard any conversation, which is not about software engineering.
+Example:
+- **HTML/CSS** — structure and styling
+- **SQLite** — local data storage
+- **Flask** — lightweight backend server
 
-    Provide only docker command in plain text.
-  """,
-    "router": """
-    You are software engineer asistant
+## Rules
+- One choice per concern — no alternatives, no "or"
+- No descriptions beyond purpose
+- No testing, deployment, mobile, or implementation details
+- Justify nothing — just list
+""",
+"implementation": """
+You are a software engineer. Your goal is to implement the full solution based on the provided inputs.
 
-    Disregard any conversation, which is not about software engineering.
+## Input (all required — if any missing, ask before proceeding)
+- Task definition
+- System architecture
+- Tech stack
 
-    Decide, where to redirect user message:
-    - "define_task" - user provides App idea or ask questions about problem
-    - "architecture_planning" - user asks about architecture, provides task
-    - "technology_chooser" - user asks about technology, provides architecture
-    - "implement_code" - user wants to create code in specific technology and architecture
-    - "code_review" - user asks you to review provided code
-    - "docker_manager" - user needs docker command
+## Rules
+- Implement every file needed to run the solution completely
+- Follow the provided tech stack exactly — do not introduce new technologies
+- Do not infer or assume technologies not listed in the tech stack
+- No placeholders, no TODOs, no omissions — write complete, working code
+- Escape all special characters properly in JSON strings
 
-    Reply only with provided key
-  """
+## Required Files
+- All source files needed to run the solution
+- **README.md** — must include: project description, architecture summary, tech stack, and how to run
+
+## Output
+Return ONLY a valid JSON array, no explanation, no markdown fences:
+[
+  { "filename": "<filename>", "content": "<full file content>" }
+]
+""",
+"code_review": """
+You are a software engineer assistant. Your goal is to verify the implementation is correct, complete, and consistent.
+
+## Input (all required — if any missing, ask before proceeding)
+- Task definition
+- System architecture
+- Tech stack
+- All source files
+- README.md
+
+## Review Checklist
+1. **Correctness** — will the code run without errors?
+2. **Consistency** — does the code match the architecture and tech stack?
+3. **Completeness** — are all files referenced in README.md present and implemented?
+4. **README accuracy** — do the setup and run instructions actually work with the provided code?
+
+## Output Format
+Respond in raw Markdown with exactly these sections:
+
+# Code Review
+
+## Summary
+One paragraph overall assessment.
+
+## Issues
+- **[filename]** — description of the problem
+
+## Verdict
+`PASS` or `FAIL` — one sentence reason.
+
+## Rules
+- Be specific — reference exact filenames and line issues when possible
+- No suggestions for new features or improvements
+- No testing, deployment, or mobile concerns
+- If no issues found, say so explicitly
+""",
+"docker": """
+You are a software engineer assistant. Your goal is to create all Docker-related files needed to containerize the provided application.
+
+## Input (all required — if any missing, ask before proceeding)
+- Source files
+- README.md
+
+## Required Files
+- **Dockerfile** — builds and runs the application
+- **docker-compose.yml** — if the app has more than one service, otherwise omit
+- **.dockerignore** — excludes unnecessary files from the build
+
+## Rules
+- Base images must match the tech stack exactly
+- No unnecessary layers or dependencies
+- App must be runnable with a single `docker compose up` or `docker run` command
+- Follow instructions from README.md for how the app is started
+
+## Output
+Return ONLY a valid JSON array, no explanation, no markdown fences:
+[
+  { "filename": "Dockerfile", "content": "<full content>" },
+  { "filename": ".dockerignore", "content": "<full content>" }
+]
+""",
+"router": """
+You are a router for a software engineering agent. Your only job is to classify the user's intent and return the correct node key.
+
+## Nodes
+- "define_task" — user describes an app idea or problem to solve
+- "architecture_planning" — user asks about system design or provides a task to architect
+- "technology_chooser" — user asks about tech stack or provides architecture to choose technologies for
+- "implement_code" — user wants code generated from a defined task, architecture, and tech stack
+- "code_review" — user wants existing code reviewed
+- "docker_manager" — user wants Docker files created for their project
+
+## Rules
+- Reply with ONLY the node key, nothing else
+- If the intent is unclear, return "define_task"
+
+## Examples
+- "I want to build a todo app" → define_task
+- "Here is my task, plan the architecture" → architecture_planning
+- "What tech should I use for this architecture?" → technology_chooser
+- "Generate the code" → implement_code
+- "Review my code" → code_review
+- "Dockerize my app" → docker_manager
+"""
 } 
 
 llm = ChatOpenAI(model="gpt-4o")
@@ -223,7 +286,6 @@ def node_code_review(state: State, config: RunnableConfig) -> MessagesState:
   thread_id = config["configurable"]["thread_id"]
 
   prompt_key="code_review"
-  read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]
   write_file="REVIEW.md"
 
   messages = [
@@ -231,21 +293,13 @@ def node_code_review(state: State, config: RunnableConfig) -> MessagesState:
     content
   ]
 
-  for file_to_read in read_files:
-    try:
-      file_content = read_file(file_to_read, thread_id)
-      messages.append(HumanMessage(file_content))
-    except: 
-      pass
-
   files_in_code = {}
 
   for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
     for file in files:
       filepath = os.path.join(root, file)
       with open(filepath, "r") as f:
-        content = f.read()
-        files_in_code[filepath] = content
+        files_in_code[filepath] = f.read()
 
   messages.append(HumanMessage(json.dumps(files_in_code)))
 
@@ -259,43 +313,27 @@ def node_docker(state: State, config: RunnableConfig):
   content = state["messages"][-1]
   thread_id = config["configurable"]["thread_id"]
 
-  COMMAND_REGEX = r"^docker (start|stop) ([a-zA-Z0-9_.-]+)$"
-
   messages = [
     SystemMessage(SYSTEM_PROMPTS["docker"]),
     content
   ]
 
+  files_in_code = {}
+
+  for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
+    for file in files:
+      filepath = os.path.join(root, file)
+      with open(filepath, "r") as f:
+        files_in_code[filepath] = f.read()
+
+  messages.append(HumanMessage(json.dumps(files_in_code)))
+
   response = llm.invoke(messages)
-
-  command = response.content.strip()
-
-  match = re.match(COMMAND_REGEX, command)
-
-  if not match:
-    return {
-        "messages": [
-            AIMessage(content="Invalid or unsafe docker command.")
-        ]
-    }
-
-  action, container = match.groups()
-
-  try:
-    result = subprocess.run(
-        ["docker", action, container],
-        capture_output=True,
-        text=True
-    )
-    output = result.stdout + result.stderr
-
-  except Exception as e:
-    output = str(e)
 
   return {
     "messages": [
       response,
-      AIMessage(content=f"Execution result:\n{output}")
+      # AIMessage(content=f"Execution result:\n{output}")
     ]
   }
 
@@ -320,13 +358,13 @@ def node_implementation(state: State, config: RunnableConfig):
 
   if os.path.exists(f"static/{thread_id}/code/"):
     files_in_code = {}
-    for root, dirs, files in os.walk(f"{thread_id}/code/"):
+    for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
       for file in files:
         filepath = os.path.join(root, file)
         with open(filepath, "r") as f:
           content = f.read()
           files_in_code[filepath] = content
-    messages.append(json.dumps(files_in_code))
+    messages.append(HumanMessage(json.dumps(files_in_code)))
 
   response = llm.invoke(messages)
 
@@ -438,3 +476,110 @@ main_graph = (
 # Fix docker
 # Lepsze podejście do generowania kodu
 # Jak zaczytać 3 duże pliki?
+
+# re.sub(r'^```(?:markdown)?\n?', '', response.content.strip()).rstrip('`').strip()
+
+# FROM CLAUDE:
+# Summarize everything for implement node - in seperate node
+# use state instead of .md file
+# user_input state
+
+# Proposed State:
+# class State(TypedDict):
+#     user_input: str
+#     task: str
+#     architecture: str
+#     technology: str
+#     implementation: str
+#     messages: Annotated[list, add_messages]
+
+# this should be implemented, instead of markdown files(?)
+
+# CLAUDE IDEA: 
+# LLM decides if converstaion has ended
+# def converse_task(state: State, config):
+#     response = llm.invoke(messages)
+    
+#     # ask llm if task is sufficiently defined
+#     ready = llm.invoke([
+#         SystemMessage("Has the task been clearly and fully defined? Answer only YES or NO"),
+#         *state["messages"],
+#         AIMessage(response.content)
+#     ])
+    
+#     return {
+#         "messages": [response],
+#         "task_ready": ready.content.strip() == "YES"
+#     }
+
+#converse_task (full history) → finalize_task (writes task.md, clears history)
+# converse_arch (full history) → finalize_arch (writes arch.md, clears history)
+
+# def converse_architecture(state: State, config):
+#     messages = [
+#         SystemMessage(SYSTEM_PROMPTS["architecture"]),
+#         HumanMessage(f"Task definition:\n{state['task']}"),  # clean summary from state
+#         *state["messages"]  # only current phase conversation
+#     ]
+#     response = llm.invoke(messages)
+#     return {"messages": [response]}
+
+# def finalize_task(state: State, config):
+#     summary = llm.invoke([...])
+#     save_file("task.md", summary.content, thread_id)
+#     return {
+#         "task": summary.content,
+#         "messages": []  # clear for next phase
+#     }
+
+
+# LLM Response:
+#   → write_file("index.html", ...)
+#   → write_file("app.js", ...)
+#   → write_file("styles.css", ...)
+#   → write_file("server.py", ...)
+#   → write_file("db.py", ...)
+
+# Call 1: plan_app()
+#   → returns: ["index.html", "app.js", "styles.css", "server.py", "db.py"]
+#              + architecture decisions, API routes, tech stack...
+
+# Call 2: write_file() x3  (frontend)
+# Call 3: write_file() x2  (backend)
+
+# def build_implementation_prompt(plan, architecture, tech_stack):
+#     return f"""
+#     You are implementing a full-stack app based on this plan:
+
+#     ## Task
+#     {plan}
+
+#     ## Architecture
+#     {architecture}
+
+#     ## Technology Stack
+#     {tech_stack}
+
+#     Now implement all files using the write_file tool.
+#     Ensure frontend and backend are consistent (API routes, data models, etc).
+#     """
+
+# response = llm.call(
+#     prompt=build_implementation_prompt(plan, arch, tech),
+#     tools=[write_file_tool]
+# )
+# ```
+
+# ---
+
+# ## Your Flow Becomes:
+# ```
+# plan_task node
+#       ↓
+# create_arch node
+#       ↓
+# choose_tech node
+#       ↓
+# [merge outputs into single prompt]
+#       ↓
+# implementation node → write_file() x5
