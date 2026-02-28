@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 
 from dotenv import load_dotenv
@@ -77,15 +78,40 @@ def convert_to_json(query: str) -> str:
     except json.JSONDecodeError:
         return json.dumps({"error": "Could not parse", "raw": response.content})
 
+def generate_recipe_image(recipe: str):
+  """
+  Generate image from provided recipe
+  """
 
-tools = [tool_image, convert_to_json]
+  filename = f"recipe.png"
+  path = f"static/images/{filename}"
+
+  image_model = ChatOpenAI(model="gpt-4.1-mini")
+
+  prompt = f"""
+    Food photography of:
+    {recipe}
+  """
+
+  result = image_model.invoke(prompt, tools=[{"type": "image_generation", "quality": "low"}])
+  image = next(
+      item for item in result.content_blocks if item["type"] == "image"
+  )
+
+  image_bytes = base64.b64decode(image["base64"])
+
+  with open(path, "wb") as f:
+    f.write(image_bytes)
+
+  return f"Path to image: {path}"
+
+tools = [tool_image, convert_to_json, generate_recipe_image]
 
 @dataclass
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
 
 llm_with_tools = llm.bind_tools(tools)
-
 
 def node_router(state: State):
     """Route incoming messages to either the LLM or the image tool.

@@ -49,7 +49,7 @@ SYSTEM_PROMPTS = {
     "system_architecture": """
     You are software engineer asistant.
     
-    User will provide you with defined task, your goal is to plan architecture of this system.
+    User will provide you with defined task, your goal is to plan universal architecture of this system.
     If task is not defined, ask user about it.
 
     Your response should have:
@@ -85,7 +85,7 @@ SYSTEM_PROMPTS = {
     If task or architecture is not present, ask user about it.
     
     Do not provide a choice, choose one best tech-stack you can think of. 
-    Keep tech-stack ground to earth and simple. 
+    Keep tech-stack simple. 
 
     Disregard any conversation, which is not about software engineering.
 
@@ -432,3 +432,9 @@ main_graph = (
   .add_conditional_edges("node_router", edge_router)
   .compile()
 )
+
+# Prompt do LLMa
+# README.md podczas implementacji
+# Fix docker
+# Lepsze podejście do generowania kodu
+# Jak zaczytać 3 duże pliki?
