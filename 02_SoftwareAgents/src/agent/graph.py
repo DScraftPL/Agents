@@ -359,7 +359,12 @@ def node_implementation(state: State, config: RunnableConfig):
   if os.path.exists(f"static/{thread_id}/code/"):
     files_in_code = {}
     for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
+      dirs[:] = [d for d in dirs if d != "__pycache__"]
       for file in files:
+        if file == "graph.py":
+          continue
+        if file.endswith(".db"):
+          continue
         filepath = os.path.join(root, file)
         with open(filepath, "r") as f:
           content = f.read()
@@ -582,4 +587,4 @@ main_graph = (
 #       ↓
 # [merge outputs into single prompt]
 #       ↓
-# implementation node → write_file() x5
+# implementation node → write_file() x5 
