@@ -17,6 +17,7 @@ from langgraph.graph import MessagesState, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage, AIMessage
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
+from pathlib import Path
 
 from functools import partial
 import json, re
@@ -113,29 +114,45 @@ Example:
 - No testing, deployment, mobile, or implementation details
 - Justify nothing — just list
 """,
-"implementation": """
+    "implementation_create": """
 You are a software engineer. Your goal is to implement the full solution based on the provided inputs.
-
 ## Input (all required — if any missing, ask before proceeding)
 - Task definition
 - System architecture
 - Tech stack
-
 ## Rules
 - Implement every file needed to run the solution completely
 - Follow the provided tech stack exactly — do not introduce new technologies
 - Do not infer or assume technologies not listed in the tech stack
 - No placeholders, no TODOs, no omissions — write complete, working code
 - Escape all special characters properly in JSON strings
-
+- Organize all files into 'backend/' and 'frontend/' folders as appropriate
+- Use folder prefixes in filenames (e.g., "backend/app.py", "frontend/index.html")
 ## Required Files
 - All source files needed to run the solution
 - **README.md** — must include: project description, architecture summary, tech stack, and how to run
-
 ## Output
 Return ONLY a valid JSON array, no explanation, no markdown fences:
 [
-  { "filename": "<filename>", "content": "<full file content>" }
+  { "filename": "<folder/filename>", "content": "<full file content>" }
+]
+""",
+    "implementation_update": """
+You are a software engineer. Your goal is to extend or modify an existing codebase based on the provided task.
+## Input
+- Task definition (what to add or change)
+- Existing source files
+## Rules
+- Only modify or add files that are strictly necessary for the task
+- Preserve all existing logic and structure unless the task explicitly requires changes
+- Follow the tech stack already present in the codebase — do not introduce new technologies
+- No placeholders, no TODOs, no omissions — write complete, working code
+- Escape all special characters properly in JSON strings
+- Keep the same folder structure already used in the project
+## Output
+Return ONLY a valid JSON array of created or modified files, no explanation, no markdown fences:
+[
+  { "filename": "<folder/filename>", "content": "<full file content>" }
 ]
 """,
 "code_review": """
@@ -242,6 +259,28 @@ def save_file(file_name: str, content: str, thread_id: str):
     with open(file_name, "w") as f:
         f.write(content)
 
+def collect_code_files(thread_id: str) -> dict:
+    if not os.path.exists(f"static/{thread_id}/code/"):
+        return {}
+    files_in_code = {}
+    allowed_ext = ('.py', '.js', '.html', '.css')
+    for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
+        dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", ".git", ".venv", "venv")]
+        for file in files:
+            if not file.endswith(allowed_ext):
+                continue
+            if file == "graph.py":
+                continue
+            if file.endswith('.db'):
+                continue
+            if file.endswith('.txt'):
+                continue
+            filepath = os.path.join(root, file)
+            with open(filepath, "r") as f:
+                content = f.read()
+                files_in_code[filepath] = content
+    return files_in_code
+
 # for input and output, MessageState
   
 @dataclass
@@ -273,15 +312,87 @@ def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_file
 node_define_task = partial(basic_node, prompt_key="define_task", write_file="TASK.md", read_files=["TASK.md"])
 node_system_architecture = partial(basic_node, prompt_key="system_architecture", write_file="ARCHITECTURE.md", read_files=["TASK.md", "ARCHITECTURE.md"])
 node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", write_file="TECHNOLOGY.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"])
-# node_implementation = partial(basic_node, prompt_key="implementation", write_file="TASK.md", read_files=[])
 
-# read more files
-# node_code_review = partial(basic_node, prompt_key="code_review", write_file="REVIEW.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md", "CODE.md"])
+class LinterState(MessagesState):
+    linter_output: str
+    linter_pass: bool
 
-# docker to terminal
-# node_docker = partial(basic_node, prompt_key="docker", write_file="DOCKER.md", read_files=[])
+import tempfile, json, atexit
 
-def node_code_review(state: State, config: RunnableConfig) -> MessagesState:
+_stylelint_cfg = tempfile.NamedTemporaryFile(
+    mode="w", suffix=".json", delete=False
+)
+json.dump({"rules": {"block-no-empty": True}}, _stylelint_cfg)
+_stylelint_cfg.close()
+atexit.register(os.unlink, _stylelint_cfg.name)
+
+_eslint_cfg = tempfile.NamedTemporaryFile(
+    mode="w", suffix=".mjs", delete=False
+)
+_eslint_cfg.write(
+    'export default [{ rules: { "no-undef": "error", "no-unused-vars": "warn" } }];'
+)
+_eslint_cfg.close()
+atexit.register(os.unlink, _eslint_cfg.name)
+
+LINTER_CMDS = {
+    ".py":   ["ruff", "check", "--output-format=concise"],
+    ".js":   ["npx", "--yes", "eslint", "--no-ignore", "--config", _eslint_cfg.name],
+    ".css":  ["npx", "--yes", "stylelint", "--config", _stylelint_cfg.name],
+    ".html": ["npx", "--yes", "htmlhint"],
+}
+
+def node_linter(state: LinterState, config: RunnableConfig) -> LinterState:
+    thread_id = config["configurable"]["thread_id"]
+    base_path = f"static/{thread_id}/code/"
+
+    if not os.path.exists(base_path):
+        return {"linter_pass": True, "linter_output": "", "messages": []}
+
+    allowed_ext = ('.py', '.js', '.html', '.css')
+    all_output = []
+    any_failed = False
+
+    for root, dirs, files in os.walk(base_path):
+        dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", ".git")]
+        for file in files:
+            ext = Path(file).suffix.lower()
+            if ext not in allowed_ext or file == "graph.py" or file.endswith('.db'):
+                continue
+
+            linter_cmd = LINTER_CMDS.get(ext)
+            if not linter_cmd:
+                continue
+
+            filepath = os.path.join(root, file)
+            try:
+                result = subprocess.run(
+                    linter_cmd + [filepath],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    any_failed = True
+                    output = (result.stdout + result.stderr).strip()
+                    all_output.append(f"[{filepath}]\n{output}")
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                any_failed = True
+                all_output.append(f"[{filepath}] linter error: {e}")
+
+    combined = "\n\n".join(all_output)
+    return {
+        "linter_pass": not any_failed,
+        "linter_output": combined,
+        "messages": [] if not any_failed else [HumanMessage(f"Linter failed:\n\n{combined}")],
+    }
+
+from typing import Literal
+
+def route_after_linter(state: LinterState) -> Literal["node_code_review", "__end__"]:
+    return "node_code_review" if state["linter_pass"] else "__end__"
+
+def node_code_review(state: LinterState, config: RunnableConfig) -> MessagesState:
   content = state["messages"][-1]
   thread_id = config["configurable"]["thread_id"]
 
@@ -293,13 +404,7 @@ def node_code_review(state: State, config: RunnableConfig) -> MessagesState:
     content
   ]
 
-  files_in_code = {}
-
-  for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
-    for file in files:
-      filepath = os.path.join(root, file)
-      with open(filepath, "r") as f:
-        files_in_code[filepath] = f.read()
+  files_in_code = collect_code_files(thread_id)
 
   messages.append(HumanMessage(json.dumps(files_in_code)))
 
@@ -318,13 +423,7 @@ def node_docker(state: State, config: RunnableConfig):
     content
   ]
 
-  files_in_code = {}
-
-  for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
-    for file in files:
-      filepath = os.path.join(root, file)
-      with open(filepath, "r") as f:
-        files_in_code[filepath] = f.read()
+  files_in_code = collect_code_files(thread_id)
 
   messages.append(HumanMessage(json.dumps(files_in_code)))
 
@@ -337,61 +436,41 @@ def node_docker(state: State, config: RunnableConfig):
     ]
   }
 
-# Multiple files
-def node_implementation(state: State, config: RunnableConfig):   
-  content = state["messages"][-1]
-  thread_id = config["configurable"]["thread_id"]
+def node_implementation(state: State, config: RunnableConfig):
+    content = state["messages"][-1]
+    thread_id = config["configurable"]["thread_id"]
+    mode = state.get("mode", "create")  # "create" | "update"
 
-  messages = [
-    SystemMessage(SYSTEM_PROMPTS["implementation"]),
-    content
-  ]
+    if mode == "update":
+        system_prompt = SYSTEM_PROMPTS["implementation_update"]
+        messages = [SystemMessage(system_prompt), content]
+        files_in_code = collect_code_files(thread_id)
+        if files_in_code:
+            messages.append(HumanMessage(json.dumps(files_in_code)))
+    else:
+        system_prompt = SYSTEM_PROMPTS["implementation_create"]
+        messages = [SystemMessage(system_prompt), content]
+        for filename in ["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]:
+            try:
+                messages.append(HumanMessage(read_file(filename, thread_id)))
+            except:
+                pass
 
-  read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]
+    response = llm.invoke(messages)
+    save_file("CODE.md", response.content, thread_id)
 
-  for file_to_read in read_files:
-    try:
-      file_content = read_file(file_to_read, thread_id)
-      messages.append(HumanMessage(file_content))
-    except: 
-      pass
+    match = re.search(r'\[.*\]', response.content, re.DOTALL)
+    raw = match.group(0) if match else response.content
+    files = json.loads(raw)
 
-  if os.path.exists(f"static/{thread_id}/code/"):
-    files_in_code = {}
-    for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
-      dirs[:] = [d for d in dirs if d != "__pycache__"]
-      for file in files:
-        if file == "graph.py":
-          continue
-        if file.endswith(".db"):
-          continue
-        filepath = os.path.join(root, file)
-        with open(filepath, "r") as f:
-          content = f.read()
-          files_in_code[filepath] = content
-    messages.append(HumanMessage(json.dumps(files_in_code)))
+    directory = f"static/{thread_id}/code/"
+    for file in files:
+        filepath = os.path.join(directory, file["filename"])
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w") as f:
+            f.write(file["content"])
 
-  response = llm.invoke(messages)
-
-  write_file = "CODE.md"
-
-  save_file(write_file, response.content, thread_id)
-
-  match = re.search(r'\[.*\]', response.content, re.DOTALL)
-  raw = match.group(0) if match else response.content
-  files = json.loads(raw)
-
-  directory = f"static/{thread_id}/code/"
-
-  for file in files:
-    filepath = os.path.join(directory, file["filename"])
-    
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    
-    with open(filepath, "w") as f:
-        f.write(file["content"])
-
-  return {"messages": [response]}
+    return {"messages": [response]}
 
 def node_router(state: MessagesState) -> State:
   content = state["messages"][-1]
@@ -451,7 +530,9 @@ impl_graph = (
 code_graph = (
   StateGraph(State)
   .add_node("node_code_review", node_code_review)
-  .add_edge("__start__", "node_code_review")
+  .add_node("node_linter", node_linter)
+  .add_edge("__start__", "node_linter")
+  .add_conditional_edges("node_linter", route_after_linter)
   .compile()
 )
 
