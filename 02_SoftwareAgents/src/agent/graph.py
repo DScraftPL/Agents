@@ -16,6 +16,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage, AIMessage
 from langgraph.runtime import Runtime
+from openai import BaseModel
 from typing_extensions import TypedDict
 from pathlib import Path
 
@@ -159,9 +160,6 @@ Return ONLY a valid JSON array of created or modified files, no explanation, no 
 You are a software engineer assistant. Your goal is to verify the implementation is correct, complete, and consistent.
 
 ## Input (all required — if any missing, ask before proceeding)
-- Task definition
-- System architecture
-- Tech stack
 - All source files
 - README.md
 
@@ -217,29 +215,30 @@ Return ONLY a valid JSON array, no explanation, no markdown fences:
 ]
 """,
 "router": """
-You are a router for a software engineering agent. Your only job is to classify the user's intent and return the correct node key.
+You are a router for a software engineering agent.
+
+## Task
+Classify the user's intent and return a JSON object.
+
+## Output format (STRICT)
+{
+  "mode": "<node_key>"
+}
 
 ## Nodes
-- "define_task" — user describes an app idea or problem to solve
-- "architecture_planning" — user asks about system design or provides a task to architect
-- "technology_chooser" — user asks about tech stack or provides architecture to choose technologies for
-- "implement_code" — user wants code generated from a defined task, architecture, and tech stack
-- "code_review" — user wants existing code reviewed
-- "docker_manager" — user wants Docker files created for their project
+- "define_task"
+- "architecture_planning"
+- "technology_chooser"
+- "implement_code"
+- "code_review"
+- "docker_manager"
 
 ## Rules
-- Reply with ONLY the node key, nothing else
-- If the intent is unclear, return "define_task"
-
-## Examples
-- "I want to build a todo app" → define_task
-- "Here is my task, plan the architecture" → architecture_planning
-- "What tech should I use for this architecture?" → technology_chooser
-- "Generate the code" → implement_code
-- "Review my code" → code_review
-- "Dockerize my app" → docker_manager
+- Return ONLY valid JSON
+- No explanations
+- If unclear, use "define_task"
 """
-} 
+}
 
 llm = ChatOpenAI(model="gpt-4o")
 
@@ -263,7 +262,7 @@ def collect_code_files(thread_id: str) -> dict:
     if not os.path.exists(f"static/{thread_id}/code/"):
         return {}
     files_in_code = {}
-    allowed_ext = ('.py', '.js', '.html', '.css')
+    allowed_ext = ('.py', '.js', '.html', '.css', '.md')
     for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
         dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", ".git", ".venv", "venv")]
         for file in files:
@@ -330,13 +329,13 @@ _eslint_cfg = tempfile.NamedTemporaryFile(
     mode="w", suffix=".mjs", delete=False
 )
 _eslint_cfg.write(
-    'export default [{ rules: { "no-undef": "error", "no-unused-vars": "warn" } }];'
+    'export default [{ languageOptions: { globals: { document: true, window: true, fetch: true, localStorage: true, alert: true } }, rules: { "no-undef": "error", "no-unused-vars": "off" } }];'
 )
 _eslint_cfg.close()
 atexit.register(os.unlink, _eslint_cfg.name)
 
 LINTER_CMDS = {
-    ".py":   ["ruff", "check", "--output-format=concise"],
+    ".py":   ["ruff", "check", "--output-format=concise", "--ignore=D,I001,F401"],
     ".js":   ["npx", "--yes", "eslint", "--no-ignore", "--config", _eslint_cfg.name],
     ".css":  ["npx", "--yes", "stylelint", "--config", _stylelint_cfg.name],
     ".html": ["npx", "--yes", "htmlhint"],
@@ -472,27 +471,59 @@ def node_implementation(state: State, config: RunnableConfig):
 
     return {"messages": [response]}
 
+class RouterOutput(BaseModel):
+    mode: Literal[
+        "define_task",
+        "architecture_planning",
+        "technology_chooser",
+        "implement_code",
+        "code_review",
+        "docker_manager"
+    ]
+
+    model_config = {
+        "extra": "forbid"  # THIS FIXES THE ERROR
+    }
+
+router_llm = llm.with_structured_output(RouterOutput)
+
 def node_router(state: MessagesState) -> State:
-  content = state["messages"][-1]
+    content = state["messages"][-1]
 
-  messages = [
-    SystemMessage(SYSTEM_PROMPTS["router"]),
-    content
-  ]
+    result = router_llm.invoke([
+        SystemMessage(SYSTEM_PROMPTS["router"]),
+        content
+    ])
 
-  response = llm.invoke(messages)
-  mode = response.content.strip().strip('"')
+    return {
+        "messages": [content],
+        "mode": result.mode
+    }
 
-  return {"messages": [content], "mode": mode}
+VALID_NODES = {
+    "define_task",
+    "architecture_planning",
+    "technology_chooser",
+    "implement_code",
+    "code_review",
+    "docker_manager"
+}
 
-def edge_router(state: State) -> Literal["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager", "__end__"]:
-  mode = state["mode"]
-  nodes = ["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager"]
+def edge_router(state: State) -> Literal[
+    "define_task",
+    "architecture_planning",
+    "technology_chooser",
+    "implement_code",
+    "code_review",
+    "docker_manager",
+    "__end__"
+]:
+    mode = state.get("mode")
 
-  if mode not in nodes:
-    return "__end__"
-  
-  return mode
+    if mode not in VALID_NODES:
+        return "__end__"
+
+    return mode
 
 # use subgraphs or something similar
 # one router decides which graph to use, changing mode
