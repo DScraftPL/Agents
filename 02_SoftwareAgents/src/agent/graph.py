@@ -4,6 +4,9 @@ Returns a predefined response. Replace logic and configuration as needed.
 """
 
 from __future__ import annotations
+import atexit
+import tempfile
+from typing import Literal
 
 import os
 
@@ -21,13 +24,14 @@ from typing_extensions import TypedDict
 from pathlib import Path
 
 from functools import partial
-import json, re
+import json
+import re
 import subprocess
 
 # from src.agent.prompts import SYSTEM_PROMPTS
 
 SYSTEM_PROMPTS = {
-"define_task": """
+    "define_task": """
 You are a software engineer assistant. Your sole goal is to define a clear, actionable task definition based on the user's input.
 
 ## Input
@@ -48,7 +52,7 @@ A bullet list of clear, measurable outcomes the solution must achieve.
 - No technologies, testing, planning, requirements, challenges, or examples
 - Focus only on WHAT needs to be solved, not HOW
 """,
-"system_architecture": """
+    "system_architecture": """
 You are a software engineer assistant. Your goal is to define a lean, appropriate system architecture based on the provided task definition.
 
 ## Input
@@ -83,7 +87,7 @@ Examples: Monolith, Client-Server, REST API, MVC, MVP, Microservices (only if tr
 - No testing, deployment, mobile, challenges, or examples
 - Keep it brief — no diagrams
 """,
-"technology_chooser": """
+    "technology_chooser": """
 You are a software engineer assistant. Your goal is to select the simplest, most appropriate tech stack for the given task and architecture.
 
 ## Input
@@ -156,7 +160,7 @@ Return ONLY a valid JSON array of created or modified files, no explanation, no 
   { "filename": "<folder/filename>", "content": "<full file content>" }
 ]
 """,
-"code_review": """
+    "code_review": """
 You are a software engineer assistant. Your goal is to verify the implementation is correct, complete, and consistent.
 
 ## Input (all required — if any missing, ask before proceeding)
@@ -189,7 +193,7 @@ One paragraph overall assessment.
 - No testing, deployment, or mobile concerns
 - If no issues found, say so explicitly
 """,
-"docker": """
+    "docker": """
 You are a software engineer assistant. Your goal is to create all Docker-related files needed to containerize the provided application.
 
 ## Input (all required — if any missing, ask before proceeding)
@@ -214,7 +218,7 @@ Return ONLY a valid JSON array, no explanation, no markdown fences:
   { "filename": ".dockerignore", "content": "<full content>" }
 ]
 """,
-"router": """
+    "router": """
 You are a router for a software engineering agent.
 
 ## Task
@@ -242,21 +246,24 @@ Classify the user's intent and return a JSON object.
 
 llm = ChatOpenAI(model="gpt-4o")
 
+
 def read_file(file_name: str, thread_id: str) -> str:
-  file_name = f"static/{thread_id}/markdown/{file_name}"
-  if os.path.exists(file_name):
-    with open(file_name, "r") as f:
-      file_content = f.read()
-      return file_content
-  else:
-    raise RuntimeError("File cannot be read")
+    file_name = f"static/{thread_id}/markdown/{file_name}"
+    if os.path.exists(file_name):
+        with open(file_name, "r") as f:
+            file_content = f.read()
+            return file_content
+    else:
+        raise RuntimeError("File cannot be read")
+
 
 def save_file(file_name: str, content: str, thread_id: str):
     directory = f"static/{thread_id}/markdown/"
-    os.makedirs(directory, exist_ok=True) 
+    os.makedirs(directory, exist_ok=True)
     file_name = os.path.join(directory, file_name)
     with open(file_name, "w") as f:
         f.write(content)
+
 
 def collect_code_files(thread_id: str) -> dict:
     if not os.path.exists(f"static/{thread_id}/code/"):
@@ -264,7 +271,8 @@ def collect_code_files(thread_id: str) -> dict:
     files_in_code = {}
     allowed_ext = ('.py', '.js', '.html', '.css', '.md')
     for root, dirs, files in os.walk(f"static/{thread_id}/code/"):
-        dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", ".git", ".venv", "venv")]
+        dirs[:] = [d for d in dirs if d not in (
+            "__pycache__", "node_modules", ".git", ".venv", "venv")]
         for file in files:
             if not file.endswith(allowed_ext):
                 continue
@@ -281,42 +289,50 @@ def collect_code_files(thread_id: str) -> dict:
     return files_in_code
 
 # for input and output, MessageState
-  
+
+
 @dataclass
 class State(MessagesState):
-  mode: Literal["define_task", "architecture_planning", "technology_chooser", "implement_code", "code_review", "docker_manager"]
+    mode: Literal["define_task", "architecture_planning",
+                  "technology_chooser", "implement_code", "code_review", "docker_manager"]
+
 
 def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_files: list[str], write_file: str) -> MessagesState:
-  content = state["messages"][-1]
-  thread_id = config["configurable"]["thread_id"]
+    content = state["messages"][-1]
+    thread_id = config["configurable"]["thread_id"]
 
-  messages = [
-    SystemMessage(SYSTEM_PROMPTS[prompt_key]),
-    content
-  ]
+    messages = [
+        SystemMessage(SYSTEM_PROMPTS[prompt_key]),
+        content
+    ]
 
-  for file_to_read in read_files:
-    try:
-      file_content = read_file(file_to_read, thread_id)
-      messages.append(HumanMessage(file_content))
-    except: 
-      pass
+    for file_to_read in read_files:
+        try:
+            file_content = read_file(file_to_read, thread_id)
+            messages.append(HumanMessage(file_content))
+        except:
+            pass
 
-  response = llm.invoke(messages)
+    response = llm.invoke(messages)
 
-  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"), thread_id)
+    save_file(write_file, response.content.strip().strip(
+        "```").strip("markdown").strip("\n"), thread_id)
 
-  return {"messages": [response]}
+    return {"messages": [response]}
 
-node_define_task = partial(basic_node, prompt_key="define_task", write_file="TASK.md", read_files=["TASK.md"])
-node_system_architecture = partial(basic_node, prompt_key="system_architecture", write_file="ARCHITECTURE.md", read_files=["TASK.md", "ARCHITECTURE.md"])
-node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", write_file="TECHNOLOGY.md", read_files=["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"])
+
+node_define_task = partial(
+    basic_node, prompt_key="define_task", write_file="TASK.md", read_files=["TASK.md"])
+node_system_architecture = partial(basic_node, prompt_key="system_architecture",
+                                   write_file="ARCHITECTURE.md", read_files=["TASK.md", "ARCHITECTURE.md"])
+node_technology_chooser = partial(basic_node, prompt_key="technology_chooser", write_file="TECHNOLOGY.md", read_files=[
+                                  "TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"])
+
 
 class LinterState(MessagesState):
     linter_output: str
     linter_pass: bool
 
-import tempfile, json, atexit
 
 _stylelint_cfg = tempfile.NamedTemporaryFile(
     mode="w", suffix=".json", delete=False
@@ -329,17 +345,18 @@ _eslint_cfg = tempfile.NamedTemporaryFile(
     mode="w", suffix=".mjs", delete=False
 )
 _eslint_cfg.write(
-    'export default [{ languageOptions: { globals: { document: true, window: true, fetch: true, localStorage: true, alert: true } }, rules: { "no-undef": "error", "no-unused-vars": "off" } }];'
+    'export default [{ languageOptions: { globals: { document: true, window: true, fetch: true, localStorage: true, alert: true, console: true } }, rules: { "no-undef": "error", "no-unused-vars": "off" } }];'
 )
 _eslint_cfg.close()
 atexit.register(os.unlink, _eslint_cfg.name)
 
 LINTER_CMDS = {
-    ".py":   ["ruff", "check", "--output-format=concise", "--ignore=D,I001,F401"],
+    ".py":   ["ruff", "check", "--output-format=concise", "--ignore=D,I001,F401,T201"],
     ".js":   ["npx", "--yes", "eslint", "--no-ignore", "--config", _eslint_cfg.name],
     ".css":  ["npx", "--yes", "stylelint", "--config", _stylelint_cfg.name],
     ".html": ["npx", "--yes", "htmlhint"],
 }
+
 
 def node_linter(state: LinterState, config: RunnableConfig) -> LinterState:
     thread_id = config["configurable"]["thread_id"]
@@ -353,7 +370,8 @@ def node_linter(state: LinterState, config: RunnableConfig) -> LinterState:
     any_failed = False
 
     for root, dirs, files in os.walk(base_path):
-        dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", ".git")]
+        dirs[:] = [d for d in dirs if d not in (
+            "__pycache__", "node_modules", ".git")]
         for file in files:
             ext = Path(file).suffix.lower()
             if ext not in allowed_ext or file == "graph.py" or file.endswith('.db'):
@@ -386,54 +404,57 @@ def node_linter(state: LinterState, config: RunnableConfig) -> LinterState:
         "messages": [] if not any_failed else [HumanMessage(f"Linter failed:\n\n{combined}")],
     }
 
-from typing import Literal
 
 def route_after_linter(state: LinterState) -> Literal["node_code_review", "__end__"]:
     return "node_code_review" if state["linter_pass"] else "__end__"
 
+
 def node_code_review(state: LinterState, config: RunnableConfig) -> MessagesState:
-  content = state["messages"][-1]
-  thread_id = config["configurable"]["thread_id"]
+    content = state["messages"][-1]
+    thread_id = config["configurable"]["thread_id"]
 
-  prompt_key="code_review"
-  write_file="REVIEW.md"
+    prompt_key = "code_review"
+    write_file = "REVIEW.md"
 
-  messages = [
-    SystemMessage(SYSTEM_PROMPTS[prompt_key]),
-    content
-  ]
+    messages = [
+        SystemMessage(SYSTEM_PROMPTS[prompt_key]),
+        content
+    ]
 
-  files_in_code = collect_code_files(thread_id)
+    files_in_code = collect_code_files(thread_id)
 
-  messages.append(HumanMessage(json.dumps(files_in_code)))
+    messages.append(HumanMessage(json.dumps(files_in_code)))
 
-  response = llm.invoke(messages)
+    response = llm.invoke(messages)
 
-  save_file(write_file, response.content.strip().strip("```").strip("markdown").strip("\n"), thread_id)
+    save_file(write_file, response.content.strip().strip(
+        "```").strip("markdown").strip("\n"), thread_id)
 
-  return {"messages": [response]}
+    return {"messages": [response]}
+
 
 def node_docker(state: State, config: RunnableConfig):
-  content = state["messages"][-1]
-  thread_id = config["configurable"]["thread_id"]
+    content = state["messages"][-1]
+    thread_id = config["configurable"]["thread_id"]
 
-  messages = [
-    SystemMessage(SYSTEM_PROMPTS["docker"]),
-    content
-  ]
-
-  files_in_code = collect_code_files(thread_id)
-
-  messages.append(HumanMessage(json.dumps(files_in_code)))
-
-  response = llm.invoke(messages)
-
-  return {
-    "messages": [
-      response,
-      # AIMessage(content=f"Execution result:\n{output}")
+    messages = [
+        SystemMessage(SYSTEM_PROMPTS["docker"]),
+        content
     ]
-  }
+
+    files_in_code = collect_code_files(thread_id)
+
+    messages.append(HumanMessage(json.dumps(files_in_code)))
+
+    response = llm.invoke(messages)
+
+    return {
+        "messages": [
+            response,
+            # AIMessage(content=f"Execution result:\n{output}")
+        ]
+    }
+
 
 def node_implementation(state: State, config: RunnableConfig):
     content = state["messages"][-1]
@@ -471,6 +492,7 @@ def node_implementation(state: State, config: RunnableConfig):
 
     return {"messages": [response]}
 
+
 class RouterOutput(BaseModel):
     mode: Literal[
         "define_task",
@@ -485,7 +507,9 @@ class RouterOutput(BaseModel):
         "extra": "forbid"  # THIS FIXES THE ERROR
     }
 
+
 router_llm = llm.with_structured_output(RouterOutput)
+
 
 def node_router(state: MessagesState) -> State:
     content = state["messages"][-1]
@@ -500,6 +524,7 @@ def node_router(state: MessagesState) -> State:
         "mode": result.mode
     }
 
+
 VALID_NODES = {
     "define_task",
     "architecture_planning",
@@ -508,6 +533,7 @@ VALID_NODES = {
     "code_review",
     "docker_manager"
 }
+
 
 def edge_router(state: State) -> Literal[
     "define_task",
@@ -530,62 +556,63 @@ def edge_router(state: State) -> Literal[
 
 # to define new graphs, use langgraph.json
 
+
 task_graph = (
-  StateGraph(State)
-  .add_node("node_define_task", node_define_task)
-  .add_edge("__start__", "node_define_task")
-  .compile()
+    StateGraph(State)
+    .add_node("node_define_task", node_define_task)
+    .add_edge("__start__", "node_define_task")
+    .compile()
 )
 
 arch_graph = (
-  StateGraph(State)
-  .add_node("node_system_architecture", node_system_architecture)
-  .add_edge("__start__", "node_system_architecture")
-  .compile()
+    StateGraph(State)
+    .add_node("node_system_architecture", node_system_architecture)
+    .add_edge("__start__", "node_system_architecture")
+    .compile()
 )
 
 tech_graph = (
-  StateGraph(State)
-  .add_node("node_technology_chooser", node_technology_chooser)
-  .add_edge("__start__", "node_technology_chooser")
-  .compile()
+    StateGraph(State)
+    .add_node("node_technology_chooser", node_technology_chooser)
+    .add_edge("__start__", "node_technology_chooser")
+    .compile()
 )
 
 impl_graph = (
-  StateGraph(State)
-  .add_node("node_implementation", node_implementation)
-  .add_edge("__start__", "node_implementation")
-  .compile()
+    StateGraph(State)
+    .add_node("node_implementation", node_implementation)
+    .add_edge("__start__", "node_implementation")
+    .compile()
 )
 
 code_graph = (
-  StateGraph(State)
-  .add_node("node_code_review", node_code_review)
-  .add_node("node_linter", node_linter)
-  .add_edge("__start__", "node_linter")
-  .add_conditional_edges("node_linter", route_after_linter)
-  .compile()
+    StateGraph(State)
+    .add_node("node_code_review", node_code_review)
+    .add_node("node_linter", node_linter)
+    .add_edge("__start__", "node_linter")
+    .add_conditional_edges("node_linter", route_after_linter)
+    .compile()
 )
 
 dock_graph = (
-  StateGraph(State)
-  .add_node("node_docker", node_docker)
-  .add_edge("__start__", "node_docker")
-  .compile()
+    StateGraph(State)
+    .add_node("node_docker", node_docker)
+    .add_edge("__start__", "node_docker")
+    .compile()
 )
 
 main_graph = (
-  StateGraph(MessagesState)
-  .add_node("node_router", node_router)
-  .add_node("define_task", task_graph)
-  .add_node("architecture_planning", arch_graph)
-  .add_node("technology_chooser", tech_graph)
-  .add_node("implement_code", impl_graph)
-  .add_node("code_review", code_graph)
-  .add_node("docker_manager", dock_graph)
-  .add_edge("__start__", "node_router")
-  .add_conditional_edges("node_router", edge_router)
-  .compile()
+    StateGraph(MessagesState)
+    .add_node("node_router", node_router)
+    .add_node("define_task", task_graph)
+    .add_node("architecture_planning", arch_graph)
+    .add_node("technology_chooser", tech_graph)
+    .add_node("implement_code", impl_graph)
+    .add_node("code_review", code_graph)
+    .add_node("docker_manager", dock_graph)
+    .add_edge("__start__", "node_router")
+    .add_conditional_edges("node_router", edge_router)
+    .compile()
 )
 
 # Prompt do LLMa
@@ -612,24 +639,24 @@ main_graph = (
 
 # this should be implemented, instead of markdown files(?)
 
-# CLAUDE IDEA: 
+# CLAUDE IDEA:
 # LLM decides if converstaion has ended
 # def converse_task(state: State, config):
 #     response = llm.invoke(messages)
-    
+
 #     # ask llm if task is sufficiently defined
 #     ready = llm.invoke([
 #         SystemMessage("Has the task been clearly and fully defined? Answer only YES or NO"),
 #         *state["messages"],
 #         AIMessage(response.content)
 #     ])
-    
+
 #     return {
 #         "messages": [response],
 #         "task_ready": ready.content.strip() == "YES"
 #     }
 
-#converse_task (full history) → finalize_task (writes task.md, clears history)
+# converse_task (full history) → finalize_task (writes task.md, clears history)
 # converse_arch (full history) → finalize_arch (writes arch.md, clears history)
 
 # def converse_architecture(state: State, config):
@@ -699,4 +726,4 @@ main_graph = (
 #       ↓
 # [merge outputs into single prompt]
 #       ↓
-# implementation node → write_file() x5 
+# implementation node → write_file() x5
