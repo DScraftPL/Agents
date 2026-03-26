@@ -1,0 +1,15 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "task": "./src/main.py:task_graph",
+    "arch": "./src/main.py:arch_graph",
+    "tech": "./src/main.py:tech_graph",
+    "impl": "./src/main.py:impl_graph",
+    "code": "./src/main.py:code_graph",
+    "dock": "./src/main.py:dock_graph",
+    "main": "./src/main.py:main_graph"
+  },
+  "env": ".env",
+  "image_distro": "wolfi"
+}
