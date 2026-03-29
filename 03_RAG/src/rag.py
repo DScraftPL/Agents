@@ -168,15 +168,7 @@ def format_context(docs: list[Document]) -> str:
 
 
 def save_snapshot(thread_id: str, path: str) -> int:
-    """
-    Serialise every document in the thread's store to a plain-text file.
-
-    Returns the number of chunks written.
-    """
-    from .rag import _get_store          # local import to avoid circular deps
-
     store = _get_store(thread_id)
-    # InMemoryVectorStore keeps docs in .store — values are (doc, embedding)
     docs: list[Document] = [
         Document(
             page_content=entry["text"],
@@ -210,72 +202,60 @@ def save_snapshot(thread_id: str, path: str) -> int:
     return len(docs)
 
 
-def load_snapshot(thread_id: str, path: str) -> int:
-    """
-    Restore a snapshot into the thread's store.
+# def load_snapshot(thread_id: str, path: str) -> int:
+#     if not os.path.exists(path):
+#         raise FileNotFoundError(f"Snapshot not found: {path}")
 
-    Documents are re-embedded from their raw text (same as ingest_*).
-    Returns the number of chunks restored.
-    """
-    from .rag import _get_store, _embeddings
-    from langchain_core.vectorstores import InMemoryVectorStore
+#     docs = _parse_snapshot(path)
+#     if not docs:
+#         return 0
 
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Snapshot not found: {path}")
-
-    docs = _parse_snapshot(path)
-    if not docs:
-        return 0
-
-    store = _get_store(thread_id)
-    store.add_documents(documents=docs, ids=[d.id for d in docs if d.id])
-    return len(docs)
+#     store = _get_store(thread_id)
+#     store.add_documents(documents=docs, ids=[d.id for d in docs if d.id])
+#     return len(docs)
 
 
-def _parse_snapshot(path: str) -> list[Document]:
-    with open(path, encoding="utf-8") as fh:
-        raw = fh.read()
+# def _parse_snapshot(path: str) -> list[Document]:
+#     with open(path, encoding="utf-8") as fh:
+#         raw = fh.read()
 
-    chunks = [c for c in raw.split(_SEP) if c.strip()]
-    docs: list[Document] = []
+#     chunks = [c for c in raw.split(_SEP) if c.strip()]
+#     docs: list[Document] = []
 
-    for chunk in chunks:
-        # split on the first "---\n" that follows the header
-        if "\n---\n" not in chunk:
-            continue
-        header_part, content = chunk.split("\n---\n", 1)
+#     for chunk in chunks:
+#         if "\n---\n" not in chunk:
+#             continue
+#         header_part, content = chunk.split("\n---\n", 1)
 
-        metadata: dict = {}
-        doc_id: str = ""
+#         metadata: dict = {}
+#         doc_id: str = ""
 
-        for line in header_part.strip().splitlines():
-            if ": " not in line:
-                continue
-            key, _, raw_val = line.partition(": ")
-            key = key.strip()
-            # unescape
-            val = raw_val.replace("\\n", "\n").replace("\\\\", "\\")
-            if key == "doc_id":
-                doc_id = val
-            elif key in _META_KEYS:
-                metadata[key] = val
+#         for line in header_part.strip().splitlines():
+#             if ": " not in line:
+#                 continue
+#             key, _, raw_val = line.partition(": ")
+#             key = key.strip()
+#             # unescape
+#             val = raw_val.replace("\\n", "\n").replace("\\\\", "\\")
+#             if key == "doc_id":
+#                 doc_id = val
+#             elif key in _META_KEYS:
+#                 metadata[key] = val
 
-        # strip the leading newline that follows "---\n"
-        page_content = content.lstrip("\n").rstrip("\n")
-        if not page_content:
-            continue
+#         page_content = content.lstrip("\n").rstrip("\n")
+#         if not page_content:
+#             continue
 
-        docs.append(Document(
-            page_content=page_content,
-            metadata=metadata,
-            id=doc_id or None,
-        ))
+#         docs.append(Document(
+#             page_content=page_content,
+#             metadata=metadata,
+#             id=doc_id or None,
+#         ))
 
-    return docs
+#     return docs
 
 
 def snapshot_path(thread_id: str, base_dir: str = ".snapshots") -> str:
-    """Default path: <base_dir>/<thread_id>.txt"""
     safe = re.sub(r"[^\w\-]", "_", thread_id)
     return os.path.join(base_dir, f"{safe}.txt")
 
