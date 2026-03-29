@@ -6,6 +6,7 @@ from src.prompts import SYSTEM_PROMPTS
 from src.helpers import read_file, save_file
 from src.config import llm
 from src.states import State
+from src.rag import format_context, ingest_markdown, retrieve, save_snapshot
 
 
 def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_files: list[str], write_file: str) -> MessagesState:
@@ -17,16 +18,16 @@ def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_file
         content
     ]
 
-    for file_to_read in read_files:
-        try:
-            file_content = read_file(file_to_read, thread_id)
-            messages.append(HumanMessage(file_content))
-        except:
-            pass
+    rag_data = retrieve(content.content, thread_id)
+    if rag_data:
+        messages.append(HumanMessage(format_context(rag_data)))
+    save_snapshot(thread_id, ".snapshots/temp.txt")
 
     response = llm.invoke(messages)
+    content = response.content.strip().strip(
+        "```").strip("markdown").strip("\n")
 
-    save_file(write_file, response.content.strip().strip(
-        "```").strip("markdown").strip("\n"), thread_id)
+    save_file(write_file, content, thread_id)
+    ingest_markdown(write_file, content, thread_id)
 
     return {"messages": [response]}

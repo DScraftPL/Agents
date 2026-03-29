@@ -10,6 +10,7 @@ from typing import Literal
 
 from langgraph.graph import MessagesState, StateGraph
 from langchain_core.messages import SystemMessage
+from langchain_core.runnables import RunnableConfig
 from openai import BaseModel
 
 from functools import partial
@@ -22,6 +23,7 @@ from src.nodes.implementation import node_implementation
 from src.nodes.docker import node_docker
 from src.nodes.review import node_code_review
 from src.nodes.linter import node_linter
+from src.rag import ingest_all
 
 node_define_task = partial(
     basic_node, prompt_key="define_task", write_file="TASK.md", read_files=["TASK.md"])
@@ -93,6 +95,17 @@ def edge_router(state: State) -> Literal[
 
     return mode
 
+_initalized_threads: set[str] = set()
+
+def node_init(state: State, config: RunnableConfig) -> Literal["node_router"]:
+    thread_id = config["configurable"]["thread_id"]
+
+    if thread_id not in _initalized_threads:
+        ingest_all(thread_id)
+        _initalized_threads.add(thread_id)
+
+    return state
+
 
 task_graph = (
     StateGraph(State)
@@ -140,6 +153,7 @@ dock_graph = (
 
 main_graph = (
     StateGraph(MessagesState)
+    .add_node("node_init", node_init)
     .add_node("node_router", node_router)
     .add_node("define_task", task_graph)
     .add_node("architecture_planning", arch_graph)
@@ -147,7 +161,8 @@ main_graph = (
     .add_node("implement_code", impl_graph)
     .add_node("code_review", code_graph)
     .add_node("docker_manager", dock_graph)
-    .add_edge("__start__", "node_router")
+    .add_edge("node_init", "node_router")
+    .add_edge("__start__", "node_init")
     .add_conditional_edges("node_router", edge_router)
     .compile()
 )

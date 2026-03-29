@@ -3,6 +3,7 @@ from typing import Literal
 
 from langgraph.graph import MessagesState
 
+
 @dataclass
 class LinterState(MessagesState):
     linter_output: str

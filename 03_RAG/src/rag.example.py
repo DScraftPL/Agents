@@ -3,7 +3,7 @@ import re
 import hashlib
 
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings          # swap for any Embeddings class
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 
 # ---------------------------------------------------------------------------
