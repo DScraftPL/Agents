@@ -9,27 +9,40 @@ from src.prompts import SYSTEM_PROMPTS
 from src.helpers import collect_code_files, read_file, save_file
 from src.config import llm
 from src.states import State
+from src.rag import format_context, retrieve, ingest_code_file, save_snapshot
 
 
 def node_implementation(state: State, config: RunnableConfig):
     content = state["messages"][-1]
     thread_id = config["configurable"]["thread_id"]
-    mode = state.get("mode", "create")  # "create" | "update"
+    files_in_code = collect_code_files(thread_id)
+    is_update = bool(files_in_code)
 
-    if mode == "update":
+    messages = [content]
+
+    if is_update:
         system_prompt = SYSTEM_PROMPTS["implementation_update"]
-        messages = [SystemMessage(system_prompt), content]
-        files_in_code = collect_code_files(thread_id)
-        if files_in_code:
-            messages.append(HumanMessage(json.dumps(files_in_code)))
+        rag_query = content.content
+        rag_data = retrieve(rag_query, thread_id)
+
+        existing = ""
+        for filepath, file_content in files_in_code.items():
+            rel_path = filepath.replace(f"projects/{thread_id}/code/", "")
+            existing += f"\n### {rel_path}\n```\n{file_content}\n```\n"
+        messages.append(HumanMessage(f"## Existing codebase:\n{existing}"))
     else:
         system_prompt = SYSTEM_PROMPTS["implementation_create"]
-        messages = [SystemMessage(system_prompt), content]
-        for filename in ["TASK.md", "ARCHITECTURE.md", "TECHNOLOGY.md"]:
-            try:
-                messages.append(HumanMessage(read_file(filename, thread_id)))
-            except:
-                pass
+        rag_data = retrieve(content.content, thread_id, source_type="markdown")
+
+    messages.append(SystemMessage(system_prompt))
+    if rag_data:
+        messages.append(HumanMessage(format_context(rag_data)))
+
+        file_path = f"projects/{thread_id}/data.txt"
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        with open(file_path, "w") as f:
+            f.write(format_context(rag_data))
 
     response = llm.invoke(messages)
     save_file("CODE.md", response.content, thread_id)
@@ -38,11 +51,22 @@ def node_implementation(state: State, config: RunnableConfig):
     raw = match.group(0) if match else response.content
     files = json.loads(raw)
 
-    directory = f"static/{thread_id}/code/"
+    directory = f"projects/{thread_id}/code/"
     for file in files:
-        filepath = os.path.join(directory, file["filename"])
+        filename = file["filename"]
+
+        # Normalize to relative path
+        if filename.startswith(directory):
+            filename = filename[len(directory):]
+        elif filename.startswith("projects/"):
+            filename = re.sub(r"^projects/[^/]+/code/", "", filename)
+
+        # Use normalized filename, not file["filename"]
+        filepath = os.path.join(directory, filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "w") as f:
             f.write(file["content"])
+        ingest_code_file(filepath, file["content"], thread_id)
 
+    save_snapshot(thread_id, f"projects/{thread_id}/snapshot.txt")
     return {"messages": [response]}

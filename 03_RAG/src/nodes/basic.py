@@ -21,7 +21,7 @@ def basic_node(state: State, config: RunnableConfig,  prompt_key: str, read_file
     rag_data = retrieve(content.content, thread_id)
     if rag_data:
         messages.append(HumanMessage(format_context(rag_data)))
-    save_snapshot(thread_id, ".snapshots/temp.txt")
+    save_snapshot(thread_id, f"projects/{thread_id}/temp.txt")
 
     response = llm.invoke(messages)
     content = response.content.strip().strip(

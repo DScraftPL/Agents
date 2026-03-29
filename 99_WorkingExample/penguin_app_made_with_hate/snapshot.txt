@@ -1,0 +1,456 @@
+========================================================================
+id: 
+file: TECHNOLOGY.md
+source_type: markdown
+language: 
+heading: Tech Stack
+doc_id: 7ee9a7ee5f884b7c231d49c7ffd8bcf3
+---
+# Tech Stack
+
+- **HTML/CSS/JavaScript** — client-side structure and interaction
+- **D3.js** — data visualization
+- **Node.js** — server-side scripting
+- **Express.js** — server framework
+- **SQLite** — local data storage
+- **WebSockets** — real-time data updates
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Description
+doc_id: a4e88542e47b15662e0d7a561ddc531c
+---
+# Description
+The system tracks the real-time location of individual penguins, records their movement data, and provides visualizations to study their behavior patterns, supporting research, conservation, and education efforts.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: UI/UX
+doc_id: 21c044a15d8aeaa4ad7e4a5c51ac2590
+---
+# UI/UX
+The user interface will display a map with real-time location markers for individual penguins, historical movement paths, and analytics dashboards to visualize behavior patterns, with the ability for users to select specific penguins or groups for detailed investigation.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Modules
+doc_id: a32ea12ecdbb5511559dfd1c008aa9a7
+---
+# Modules
+1. **Real-Time Tracking Module:** Collects and updates the real-time location of each penguin.
+2. **Data Storage Module:** Stores historical movement and behavior data for each penguin.
+3. **Visualization Module:** Provides graphical representations of penguin movements and analytics.
+4. **User Interaction Module:** Manages user inputs and interactions, allowing selections of specific penguins or groups.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Architecture
+doc_id: a5a6414e78f4b24d608f9a0dc4cfd777
+---
+# Architecture
+Client-Server: This pattern supports efficient data processing and visualization, with a server managing the data storage and tracking updates, and a client displaying real-time and historical data.
+========================================================================
+id: 
+file: CODE.md
+source_type: markdown
+language: 
+heading: top
+doc_id: d2ad0d7a0462e83a5854f3b5a6fa006d
+---
+[
+  {
+    "filename": "backend/app.py",
+    "content": "from flask import Flask, jsonify, request, Response\nfrom flask_cors import CORS\nfrom functools import wraps\nimport json\n\napp = Flask(__name__)\nCORS(app)\n\n# Simple in-memory user database\nusers = {\n    'admin': 'password123'\n}\n\npenguins_data = {\n    'Penguin1': {\n        'location': [-25.344, 131.036]\n    },\n    'Penguin2': {\n        'location': [37.7749, -122.4194]\n    }\n}\n\ndef check_auth(username, password):\n    \"\"\"Check if a username/password combination is valid.\"\"\"\n    return users.get(username) == password\n\n\ndef authenticate():\n    \"\"\"Sends a 401 response that enables basic auth\"\"\"\n    return Response(\n    'Could not verify your login!\\n'\n    'You have to login with proper credentials', 401,\n    {'WWW-Authenticate': 'Basic realm=\"Login Required\"'})\n\n\ndef requires_auth(f):\n    @wraps(f)\n    def decorated(*args, **kwargs):\n        auth = request.authorization\n        if not auth or not check_auth(auth.username, auth.password):\n            return authenticate()\n        return f(*args, **kwargs)\n    return decorated\n\n@app.route('/api/penguins', methods=['GET'])\n@requires_auth\ndef get_penguins():\n    return jsonify(penguins_data)\n\nif __name__ == '__main__':\n    app.run(debug=True)\n"
+  },
+  {
+    "filename": "frontend/index.html",
+    "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Penguin Tracker</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n    <script src=\"https://code.jquery.com/jquery-3.6.0.min.js\"></script>\n    <script src=\"https://unpkg.com/leaflet/dist/leaflet.js\"></script>\n    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet/dist/leaflet.css\" />\n    <style>\n        body {\n            margin: 0;\n            font-family: Arial, sans-serif;\n        }\n        #map {\n            width: 100%;\n            height: 100vh; /* Ensure the map takes the full viewport height */\n            z-index: 1;\n        }\n        #penguinList {\n            position: absolute;\n            top: 10px;\n            right: 10px;\n            background-color: rgba(255, 255, 255, 0.9);\n            padding: 10px;\n            border-radius: 5px;\n            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n            max-height: 90vh;\n            overflow-y: auto;\n            z-index: 1000;\n        }\n    </style>\n</head>\n<body>\n    <div id=\"map\"></div>\n    <div id=\"penguinList\">\n        <h2>Penguin Coordinates</h2>\n        <ul id=\"penguinCoords\">\n        </ul>\n    </div>\n    <script>\n        $(document).ready(function() {\n            // Initialize the map\n            var map = L.map('map').setView([0, 0], 2);\n\n            // Add OpenStreetMap tiles\n            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {\n                maxZoom: 19,\n            }).addTo(map);\n\n            // Fetch and plot penguins data\n            $.ajax({\n                url: 'http://localhost:5000/api/penguins',\n                method: 'GET',\n                headers: {\n                    'Authorization': 'Basic ' + btoa('admin:password123')\n                },\n                success: function(data) {\n                    var $penguinList = $('#penguinCoords');\n                    $.each(data, function(key, penguin) {\n                        var marker = L.marker(penguin.location).addTo(map);\n                        marker.bindPopup('<b>' + key + '</b>').openPopup();\n\n                        // Append penguin data to the list\n                        $penguinList.append('<li>' + key + ': Latitude ' + penguin.location[0] + ', Longitude ' + penguin.location[1] + '</li>');\n                    });\n                }\n            });\n        });\n    </script>\n</body>\n</html>\n"
+  },
+  {
+    "filename": "frontend/login.html",
+    "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Login - Penguin Tracker</title>\n    <link rel=\"stylesheet\" href=\"style.css\">\n    <style>\n        body {\n            font-family: Arial, sans-serif;\n            display: flex;\n            justify-content: center;\n            align-items: center;\n            height: 100vh;\n            margin: 0;\n            background-color: #f4f4f9;\n        }\n        #loginForm {\n            background-color: #fff;\n            padding: 20px;\n            border-radius: 5px;\n            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n            width: 300px;\n        }\n        input[type=\"text\"], input[type=\"password\"] {\n            width: 100%;\n            padding: 8px;\n            margin: 8px 0;\n            box-sizing: border-box;\n        }\n        input[type=\"submit\"] {\n            background-color: #4CAF50;\n            color: white;\n            padding: 10px 20px;\n            margin: 8px 0;\n            border: none;\n            border-radius: 5px;\n            cursor: pointer;\n            width: 100%;\n        }\n    </style>\n</head>\n<body>\n    <div id=\"loginForm\">\n        <h2>Login</h2>\n        <form id=\"form\">\n            <label for=\"username\">Username:</label>\n            <input type=\"text\" id=\"username\" name=\"username\" required>\n            <label for=\"password\">Password:</label>\n            <input type=\"password\" id=\"password\" name=\"password\" required>\n            <input type=\"submit\" value=\"Login\">\n        </form>\n    </div>\n    <script>\n        document.getElementById('form').addEventListener('submit', function(event) {\n            event.preventDefault();\n            const username = document.getElementById('username').value;\n            const password = document.getElementById('password').value;\n\n            const headers = new Headers();\n            headers.set('Authorization', 'Basic ' + btoa(username + ':' + password));\n\n            fetch('http://localhost:5000/api/penguins', { headers: headers })\n                .then(response => {\n                    if (response.ok) {\n                        window.location.href = 'index.html';\n                    } else {\n                        alert('Invalid credentials');\n                    }\n                });\n        });\n    </script>\n</body>\n</html>\n"
+  },
+  {
+    "filename": "frontend/style.css",
+    "content": "body {\n    margin: 0;\n    font-family: Arial, sans-serif;\n}\n\n#loginForm, #penguinList {\n    background-color: #fff;\n    padding: 20px;\n    border-radius: 5px;\n    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n}\n\n#map {\n    width: 100%;\n    height: 100vh; /* Ensure the map takes the full viewport height */\n    z-index: 1;\n}\n\n#penguinList {\n    position: absolute;\n    top: 10px;\n    right: 10px;\n    background-color: rgba(255, 255, 255, 0.9);\n    padding: 10px;\n    border-radius: 5px;\n    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);\n    max-height: 90vh;\n    overflow-y: auto;\n    z-index: 1000;\n}\n\ninput[type=\"text\"], input[type=\"password\"] {\n    width: 100%;\n    padding: 8px;\n    margin: 8px 0;\n    box-sizing: border-box;\n}\n\ninput[type=\"submit\"] {\n    background-color: #4CAF50;\n    color: white;\n    padding: 10px 20px;\n    margin: 8px 0;\n    border: none;\n    border-radius: 5px;\n    cursor: pointer;\n    width: 100%;\n}\n"
+  }
+]
+========================================================================
+id: 
+file: README.md
+source_type: code
+language: md
+heading: README.md
+doc_id: f46fdfca49e6bb01b50253fbaf11ac69
+---
+# Penguin Tracker
+
+## Project Description
+The Penguin Tracker system is designed to enable real-time location tracking of individual penguins, record historical movement data, provide visualizations of penguin movements, and allow users to track specific penguins for study purposes. It features a user-friendly interface that presents data through maps and dashboards.
+
+## Architecture Summary
+The system follows a client-server architecture that supports efficient data processing and visualization. The server handles data storage and tracking updates, while the client displays both real-time and historical data.
+
+## Tech Stack
+- Backend: Flask
+- Frontend: HTML, CSS, JavaScript (with Leaflet.js for map rendering)
+- Database: SQLite
+
+## Simple Authentication
+The system uses Basic Authentication for securing the API endpoints.
+
+## How to Run
+### Backend
+1. Navigate to the `backend/` directory.
+2. Install the required dependencies: `pip install flask flask_cors`
+3. Run the Flask app: `python app.py`
+
+### Frontend
+1. Open `frontend/index.html` in a web browser.
+
+Ensure the backend server is running to allow the frontend to retrieve data.
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: from flask import Flask, jsonify, request, Response
+doc_id: ad0a31a7dcb1a9d8f00cd273275baf16
+---
+from flask import Flask, jsonify, request, Response
+from flask_cors import CORS
+from functools import wraps
+import json
+
+app = Flask(__name__)
+CORS(app)
+
+# Simple in-memory user database
+users = {
+    'admin': 'password123'
+}
+
+penguins_data = {
+    'Penguin1': {
+        'location': [-25.344, 131.036]
+    },
+    'Penguin2': {
+        'location': [37.7749, -122.4194]
+    }
+}
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def check_auth(username, password):
+doc_id: 03381c2fcb20aee8f409037293a1da6a
+---
+def check_auth(username, password):
+    """Check if a username/password combination is valid."""
+    return users.get(username) == password
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def authenticate():
+doc_id: 11c72c236c55cc03a7df952d0b3b0566
+---
+def authenticate():
+    """Sends a 401 response that enables basic auth"""
+    return Response(
+    'Could not verify your login!\n'
+    'You have to login with proper credentials', 401,
+    {'WWW-Authenticate': 'Basic realm="Login Required"'})
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def requires_auth(f):
+doc_id: 6fcd0e5f3a27474c2e7be63fe427befb
+---
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/api/penguins', methods=['GET'])
+@requires_auth
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def get_penguins():
+doc_id: 41e649a3800997edd6543d2240367005
+---
+def get_penguins():
+    return jsonify(penguins_data)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+========================================================================
+id: 
+file: frontend/index.html
+source_type: code
+language: html
+heading: index.html
+doc_id: 37f3fef90fdaed4d4d5c49befceedc9b
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penguin Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: none; /* Hide content initially */
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+            z-index: 1;
+        }
+        #penguinList {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-height: 90vh;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+    </style>
+    <script>
+      $(document).ready(function() {
+          const auth = localStorage.getItem('auth');
+          if (!auth) {
+              window.location.href = 'login.html';
+          } else {
+              $('body').show();
+              var map = L.map('map').setView([0, 0], 2);
+              L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                  maxZoom: 19,
+              }).addTo(map);
+
+              $.ajax({
+                  url: 'http://localhost:5000/api/penguins',
+                  method: 'GET',
+                  headers: {
+                      'Authorization': auth
+                  },
+                  success: function(data) {
+                      var $penguinList = $('#penguinCoords');
+                      $.each(data, function(key, penguin) {
+                          var marker = L.marker(penguin.location).addTo(map);
+                          marker.bindPopup('<b>' + key + '</b>').openPopup();
+
+                          $penguinList.append('<li>' + key + ': Latitude ' + penguin.location[0] + ', Longitude ' + penguin.location[1] + '</li>');
+                      });
+                  },
+                  error: function() {
+                      localStorage.removeItem('auth');
+                      window.location.href = 'login.html';
+                  }
+              });
+          }
+      });
+    </script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="penguinList">
+        <h2>Penguin Coordinates</h2>
+        <ul id="penguinCoords">
+        </ul>
+    </div>
+</body>
+</html>
+
+========================================================================
+id: 
+file: frontend/style.css
+source_type: code
+language: css
+heading: style.css
+doc_id: b73aa06a19ce47b53e52ade26d375c8b
+---
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+#loginForm, #penguinList {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+#map {
+    width: 100%;
+    height: 100vh; /* Ensure the map takes the full viewport height */
+    z-index: 1;
+}
+
+#penguinList {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    max-height: 90vh;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+    box-sizing: border-box;
+}
+
+input[type="submit"] {
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 20px;
+    margin: 8px 0;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    width: 100%;
+}
+
+========================================================================
+id: 
+file: frontend/login.html
+source_type: code
+language: html
+heading: login.html
+doc_id: 4d0cd3fe00fffc7ebde53fba2d965c9e
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Penguin Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f9;
+        }
+        #loginForm {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 300px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+            box-sizing: border-box;
+        }
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="loginForm">
+        <h2>Login</h2>
+        <form id="form">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" required>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required>
+            <input type="submit" value="Login">
+        </form>
+    </div>
+    <script>
+        document.getElementById('form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            const headers = new Headers();
+            headers.set('Authorization', 'Basic ' + btoa(username + ':' + password));
+
+            fetch('http://localhost:5000/api/penguins', { headers: headers })
+                .then(response => {
+                    if (response.ok) {
+                        localStorage.setItem('auth', 'Basic ' + btoa(username + ':' + password));
+                        window.location.href = 'index.html';
+                    } else {
+                        alert('Invalid credentials');
+                    }
+                });
+        });
+    </script>
+</body>
+</html>
+========================================================================
+id: 
+file: TASK.md
+source_type: markdown
+language: 
+heading: Problem Statement
+doc_id: fee09490b38842564b3fd0966add1f33
+---
+# Problem Statement
+The website currently allows users to access the map and data without authentication. It requires a login screen to ensure that only authorized users can view the map and associated data.
+========================================================================
+id: 
+file: TASK.md
+source_type: markdown
+language: 
+heading: Objectives
+doc_id: de9e3a1103e9873ecdedd3aa702ac143
+---
+# Objectives
+- Implement a login screen as the initial entry point for the website.
+- Restrict access to the map and data, making them visible only to authenticated users.
+- Ensure user credentials are validated before granting access to the main website features.
+- Provide a secure authentication process to protect user access.

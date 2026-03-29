@@ -112,8 +112,12 @@ def ingest_markdown(file_name: str, content: str, thread_id: str):
 
 
 def ingest_code_file(file_path: str, content: str, thread_id: str):
+    prefix = f"projects/{thread_id}/code/"
+    relative_path = file_path[len(prefix):] if file_path.startswith(
+        prefix) else file_path
+
     purge_file(file_path, thread_id)
-    docs = _chunk_code(content, file_path)
+    docs = _chunk_code(content, relative_path)
     if docs:
         _get_store(thread_id).add_documents(
             documents=docs, ids=[d.id for d in docs])
@@ -149,7 +153,8 @@ def retrieve(
 
     if source_type:
         return store.similarity_search(
-            query, k=k, filter={"source_type": source_type}
+            query, k=k, filter=lambda doc: doc.metadata.get(
+                "source_type") == source_type
         )
     return store.similarity_search(query, k=k)
 
