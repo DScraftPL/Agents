@@ -1,0 +1,100 @@
+### [markdown] ARCHITECTURE.md > UI/UX
+# UI/UX
+The user interface includes a login form and a chat interface. Upon logging in, users are redirected from the login form to a chat screen where they can communicate with the culinary agent. The application is designed to be simple and intuitive, making use of plain HTML, CSS, and vanilla JavaScript for interaction.
+
+### [markdown] ARCHITECTURE.md > Description
+# Description
+The system is a web application where users can create accounts, log in, and chat with a culinary agent. The backend is protected through JWT authentication to ensure that only authorized users can interact with the chat endpoint and manage their stored recipes.
+
+### [markdown] CODE.md > top
+[
+  {
+    "filename": "backend/app.py",
+    "content": "\nfrom flask import Flask, jsonify, request\nfrom flask_cors import CORS\nimport sqlite3\nimport bcrypt\nimport jwt\nimport datetime\n\napp = Flask(__name__)\nCORS(app)\napp.config['SECRET_KEY'] = 'your_secret_key'\n\nfrom graph import graph\n\n# Initialize the database\ndef init_db():\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute('''CREATE TABLE IF NOT EXISTS users (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 username TEXT UNIQUE NOT NULL,\n                 password TEXT NOT NULL)''')\n    c.execute('''CREATE TABLE IF NOT EXISTS recipes (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 user_id INTEGER NOT NULL,\n                 title TEXT NOT NULL,\n                 content TEXT NOT NULL,\n                 FOREIGN KEY(user_id) REFERENCES users(id))''')\n    conn.commit()\n    conn.close()\n\n# Utility function to verify JWT token\ndef token_required(f):\n    def decorator(*args, **kwargs):\n        token = request.headers.get('Authorization')\n        if not token:\n            return jsonify({'error': 'Token is missing!'}), 401\n        try:\n            decoded_token = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])\n            return f(decoded_token, *args, **kwargs)\n        except jwt.ExpiredSignatureError:\n            return jsonify({'error': 'Token has expired!'}), 401\n        except jwt.InvalidTokenError:\n            return jsonify({'error': 'Token is invalid!'}), 401\n    return decorator\n\n# Route to register a new user\n@app.route('/register', methods=['POST'])\ndef register():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())\n    try:\n        conn = sqlite3.connect('user_recipes.db')\n        c = conn.cursor()\n        c.execute(\"INSERT INTO users (username, password) VALUES (?, ?)\",\n                  (username, hashed_password))\n        conn.commit()\n        return jsonify({'message': 'User registered successfully'}), 201\n    except sqlite3.IntegrityError:\n        return jsonify({'error': 'Username already exists'}), 400\n    finally:\n        conn.close()\n\n# Route to authenticate a user and return a JWT token\n@app.route('/login', methods=['POST'])\ndef login():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT * FROM users WHERE username = ?\", (username,))\n    user = c.fetchone()\n    conn.close()\n    if user and bcrypt.checkpw(password.encode('utf-8'), user[2]):\n        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow(\n        ) + datetime.timedelta(hours=1)}, app.config['SECRET_KEY'])\n        return jsonify({'message': 'Login successful', 'token': token})\n    else:\n        return jsonify({'error': 'Invalid credentials'}), 401\n\n# Route to add a new recipe\n@app.route('/recipes', methods=['POST'])\n@token_required\ndef add_recipe(decoded_token):\n    data = request.get_json()\n    user_id = decoded_token['user_id']\n    title = data.get('title')\n    content = data.get('content')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)\",\n              (user_id, title, content))\n    conn.commit()\n    conn.close()\n    return jsonify({'message': 'Recipe added successfully'}), 201\n\n# Route to retrieve recipes for a user\n@app.route('/recipes', methods=['GET'])\n@token_required\ndef get_recipes(decoded_token):\n    user_id = decoded_token['user_id']\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT id, title, content FROM recipes WHERE user_id = ?\", (user_id,))\n    recipes = c.fetchall()\n    conn.close()\n    return jsonify({'recipes': recipes})\n\n@app.route('/chat', methods=['POST'])\n@token_required\n# Placeholder for the chat with the culinary agent\ndef culinary_agent_chat(decoded_token):\n    user_query = request.json.get('message')\n    ai_response = graph.invoke({\"messages\": user_query},\n                               config={\"configurable\": {\"thread_id\": \"user1\"}})\n\n    recipe_data = ai_response.get('recipe_data')\n\n    # Save recipe data to database if it exists\n    if recipe_data:\n        conn = sqlite3.connect('user_recipes.db')   \n        c = conn.cursor()\n        user_id = decoded_token['user_id']\n        for title, details in recipe_data.items():\n            content = f\"Ingredients: {', '.join(details['ingredients'])}\\nRecipe: {' '.join(details['recipe'])}\"\n            c.execute(\"INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)\",\n                      (user_id, title, content))\n        conn.commit()\n        conn.close()\n\n    response = ai_response[\"messages\"][-1]\n\n    print(response.content)\n\n    return jsonify({'message': response.content})\n\n\nif __name__ == '__main__':\n    init_db()\n    app.run(debug=True)\n"
+  },
+  {
+    "filename": "frontend/scripts.js",
+    "content": "\nfunction register() {\n    const username = document.getElementById('register-username').value;\n    const password = document.getElementById('register-password').value;\n\n    fetch('http://127.0.0.1:5000/register', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        alert(data.message);\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction login() {\n    const username = document.getElementById('login-username').value;\n    const password = document.getElementById('login-password').value;\n\n    fetch('http://127.0.0.1:5000/login', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        if (data.message) {\n            alert(data.message);\n            localStorage.setItem('token', data.token); // Store the token in localStorage\n            document.getElementById('user-container').style.display = 'none';\n            document.getElementById('chat-container').style.display = 'block';\n            displayRecipes();\n        } else {\n            alert(data.error);\n        }\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction displayThrobber(display) {\n    const throbber = document.getElementById('throbber');\n    if (display) {\n        throbber.style.display = 'block';\n    } else {\n        throbber.style.display = 'none';\n    }\n}\n\nfunction sendMessage() {\n    const userInput = document.getElementById('user-input').value;\n    const chatBox = document.getElementById('chat-box');\n    const token = localStorage.getItem('token');\n    chatBox.innerHTML += `<div>User: ${userInput}</div>`;\n\n    displayThrobber(true);\n\n    fetch('http://127.0.0.1:5000/chat', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json',\n            'Authorization': `Bearer ${token}`\n        },\n        body: JSON.stringify({ message: userInput })\n    })\n    .then(response => {\n        displayThrobber(false);\n        if (response.ok) {\n            return response.json();\n        } else {\n            return response.json().then(error => {throw new Error(error.error)});\n        }\n    })\n    .then(data => {\n        chatBox.innerHTML += `<div>Agent: ${data.message}</div>`;\n    })\n    .catch(error => {\n        console.error('Error:', error);\n        alert(`Error: ${error.message}`);\n    });\n}\n\nfunction displayRecipes() {\n    const token = localStorage.getItem('token');\n\n    fetch('http://127.0.0.1:5000/recipes', {\n        method: 'GET',\n        headers: {\n            'Authorization': `Bearer ${token}`\n        }\n    })\n    .then(response => {\n        if (response.ok) {\n            return response.json();\n        } else {\n            return response.json().then(error => {throw new Error(error.error)});\n        }\n    })\n    .then(data => {\n        const recipes = data.recipes;\n        const recipeSidebar = document.getElementById('recipe-sidebar');\n        recipeSidebar.innerHTML = '<h3>My Recipes</h3>';\n        recipes.forEach(recipe => {\n            recipeSidebar.innerHTML += `<div><strong>${recipe[1]}</strong><p>${recipe[2]}</p></div>`;\n        });\n    })\n    .catch(error => {\n        console.error('Error:', error);\n        alert(`Error: ${error.message}`);\n    });\n}\n"
+  }
+]
+
+### [code] frontend/styles.css > styles.css
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    text-align: center;
+}
+
+#user-container, #chat-container {
+    margin: 20px auto;
+    max-width: 400px;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+#recipe-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    height: 100vh;
+    width: 200px;
+    border-left: 1px solid #ddd;
+    padding: 10px;
+    background-color: #f9f9f9;
+    overflow-y: auto;
+}
+
+input {
+    width: 90%;
+    padding: 8px;
+    margin: 8px 0;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #28a745;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+#throbber {
+    display: none;
+}
+
+
+### [code] frontend/scripts.js > function login() {
+function login() {
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+
+    fetch('http://127.0.0.1:5000/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert(data.message);
+            localStorage.setItem('token', data.token); // Store the token in localStorage
+            document.getElementById('user-container').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'block';
+            displayRecipes();
+        } else {
+            alert(data.error);
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}

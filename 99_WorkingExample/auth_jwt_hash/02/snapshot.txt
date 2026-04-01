@@ -1,0 +1,614 @@
+========================================================================
+id: 
+file: TECHNOLOGY.md
+source_type: markdown
+language: 
+heading: Tech Stack
+doc_id: 7ee9a7ee5f884b7c231d49c7ffd8bcf3
+---
+# Tech Stack
+
+- **HTML/CSS** — structure and styling
+- **JavaScript** — interactive client-side logic
+- **SQLite** — local data storage
+- **Flask** — lightweight backend serve
+========================================================================
+id: 
+file: TASK.md
+source_type: markdown
+language: 
+heading: Problem Statement
+doc_id: fee09490b38842564b3fd0966add1f33
+---
+# Problem Statement
+The application currently lacks proper authorization controls that enforce access restrictions based on JWT tokens for different modules. This creates a risk where unauthorized users might access restricted functionalities.
+========================================================================
+id: 
+file: TASK.md
+source_type: markdown
+language: 
+heading: Objectives
+doc_id: de9e3a1103e9873ecdedd3aa702ac143
+---
+# Objectives
+- Integrate JWT-based authorization across all application modules to ensure only authenticated and authorized users can access specific features.
+- Ensure the Chat Module and Recipe Management Module validate JWT tokens for user access.
+- Modify the existing code to check for valid JWT tokens before allowing any operations that require user authentication.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Description
+doc_id: a4e88542e47b15662e0d7a561ddc531c
+---
+# Description
+The system is a web application where users can create accounts, log in, and chat with a culinary agent. The backend is protected through JWT authentication to ensure that only authorized users can interact with the chat endpoint and manage their stored recipes.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: UI/UX
+doc_id: 21c044a15d8aeaa4ad7e4a5c51ac2590
+---
+# UI/UX
+The user interface includes a login form and a chat interface. Upon logging in, users are redirected from the login form to a chat screen where they can communicate with the culinary agent. The application is designed to be simple and intuitive, making use of plain HTML, CSS, and vanilla JavaScript for interaction.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Modules
+doc_id: a32ea12ecdbb5511559dfd1c008aa9a7
+---
+# Modules
+- **Authentication Module**: Handles user registration and login functionality with JWT token issuance.
+- **Chat Module**: Provides an interface for users to send messages to the agent.
+- **Recipe Management Module**: Allows authenticated users to store and retrieve recipes.
+- **JWT Verification**: Ensures JWT tokens are valid for access to specific routes.
+========================================================================
+id: 
+file: ARCHITECTURE.md
+source_type: markdown
+language: 
+heading: Architecture
+doc_id: a5a6414e78f4b24d608f9a0dc4cfd777
+---
+# Architecture
+Client-Server: This pattern suitably separates concerns between the client-side interface handling user interactions and the server-side business logic and data persistence, enforcing security with JWT-based authentication.
+========================================================================
+id: 
+file: CODE.md
+source_type: markdown
+language: 
+heading: top
+doc_id: d2ad0d7a0462e83a5854f3b5a6fa006d
+---
+[
+  {
+    "filename": "backend/app.py",
+    "content": "\nfrom flask import Flask, jsonify, request\nfrom flask_cors import CORS\nimport sqlite3\nimport bcrypt\nimport jwt\nimport datetime\n\napp = Flask(__name__)\nCORS(app)\napp.config['SECRET_KEY'] = 'your_secret_key'\n\nfrom graph import graph\n\n# Initialize the database\ndef init_db():\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute('''CREATE TABLE IF NOT EXISTS users (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 username TEXT UNIQUE NOT NULL,\n                 password TEXT NOT NULL)''')\n    c.execute('''CREATE TABLE IF NOT EXISTS recipes (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 user_id INTEGER NOT NULL,\n                 title TEXT NOT NULL,\n                 content TEXT NOT NULL,\n                 FOREIGN KEY(user_id) REFERENCES users(id))''')\n    conn.commit()\n    conn.close()\n\n# Utility function to verify JWT token\ndef token_required(f):\n    def decorator(*args, **kwargs):\n        token = request.headers.get('Authorization')\n        if not token:\n            return jsonify({'error': 'Token is missing!'}), 401\n        try:\n            decoded_token = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])\n            return f(decoded_token, *args, **kwargs)\n        except jwt.ExpiredSignatureError:\n            return jsonify({'error': 'Token has expired!'}), 401\n        except jwt.InvalidTokenError:\n            return jsonify({'error': 'Token is invalid!'}), 401\n    return decorator\n\n# Route to register a new user\n@app.route('/register', methods=['POST'])\ndef register():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())\n    try:\n        conn = sqlite3.connect('user_recipes.db')\n        c = conn.cursor()\n        c.execute(\"INSERT INTO users (username, password) VALUES (?, ?)\",\n                  (username, hashed_password))\n        conn.commit()\n        return jsonify({'message': 'User registered successfully'}), 201\n    except sqlite3.IntegrityError:\n        return jsonify({'error': 'Username already exists'}), 400\n    finally:\n        conn.close()\n\n# Route to authenticate a user and return a JWT token\n@app.route('/login', methods=['POST'])\ndef login():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT * FROM users WHERE username = ?\", (username,))\n    user = c.fetchone()\n    conn.close()\n    if user and bcrypt.checkpw(password.encode('utf-8'), user[2]):\n        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow(\n        ) + datetime.timedelta(hours=1)}, app.config['SECRET_KEY'])\n        return jsonify({'message': 'Login successful', 'token': token})\n    else:\n        return jsonify({'error': 'Invalid credentials'}), 401\n\n# Route to add a new recipe\n@app.route('/recipes', methods=['POST'])\n@token_required\ndef add_recipe(decoded_token):\n    data = request.get_json()\n    user_id = decoded_token['user_id']\n    title = data.get('title')\n    content = data.get('content')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)\",\n              (user_id, title, content))\n    conn.commit()\n    conn.close()\n    return jsonify({'message': 'Recipe added successfully'}), 201\n\n# Route to retrieve recipes for a user\n@app.route('/recipes', methods=['GET'])\n@token_required\ndef get_recipes(decoded_token):\n    user_id = decoded_token['user_id']\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT id, title, content FROM recipes WHERE user_id = ?\", (user_id,))\n    recipes = c.fetchall()\n    conn.close()\n    return jsonify({'recipes': recipes})\n\n@app.route('/chat', methods=['POST'])\n@token_required\n# Placeholder for the chat with the culinary agent\ndef culinary_agent_chat(decoded_token):\n    user_query = request.json.get('message')\n    ai_response = graph.invoke({\"messages\": user_query},\n                               config={\"configurable\": {\"thread_id\": \"user1\"}})\n\n    recipe_data = ai_response.get('recipe_data')\n\n    # Save recipe data to database if it exists\n    if recipe_data:\n        conn = sqlite3.connect('user_recipes.db')   \n        c = conn.cursor()\n        user_id = decoded_token['user_id']\n        for title, details in recipe_data.items():\n            content = f\"Ingredients: {', '.join(details['ingredients'])}\\nRecipe: {' '.join(details['recipe'])}\"\n            c.execute(\"INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)\",\n                      (user_id, title, content))\n        conn.commit()\n        conn.close()\n\n    response = ai_response[\"messages\"][-1]\n\n    print(response.content)\n\n    return jsonify({'message': response.content})\n\n\nif __name__ == '__main__':\n    init_db()\n    app.run(debug=True)\n"
+  },
+  {
+    "filename": "frontend/scripts.js",
+    "content": "\nfunction register() {\n    const username = document.getElementById('register-username').value;\n    const password = document.getElementById('register-password').value;\n\n    fetch('http://127.0.0.1:5000/register', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        alert(data.message);\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction login() {\n    const username = document.getElementById('login-username').value;\n    const password = document.getElementById('login-password').value;\n\n    fetch('http://127.0.0.1:5000/login', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        if (data.message) {\n            alert(data.message);\n            localStorage.setItem('token', data.token); // Store the token in localStorage\n            document.getElementById('user-container').style.display = 'none';\n            document.getElementById('chat-container').style.display = 'block';\n            displayRecipes();\n        } else {\n            alert(data.error);\n        }\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction displayThrobber(display) {\n    const throbber = document.getElementById('throbber');\n    if (display) {\n        throbber.style.display = 'block';\n    } else {\n        throbber.style.display = 'none';\n    }\n}\n\nfunction sendMessage() {\n    const userInput = document.getElementById('user-input').value;\n    const chatBox = document.getElementById('chat-box');\n    const token = localStorage.getItem('token');\n    chatBox.innerHTML += `<div>User: ${userInput}</div>`;\n\n    displayThrobber(true);\n\n    fetch('http://127.0.0.1:5000/chat', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json',\n            'Authorization': `Bearer ${token}`\n        },\n        body: JSON.stringify({ message: userInput })\n    })\n    .then(response => {\n        displayThrobber(false);\n        if (response.ok) {\n            return response.json();\n        } else {\n            return response.json().then(error => {throw new Error(error.error)});\n        }\n    })\n    .then(data => {\n        chatBox.innerHTML += `<div>Agent: ${data.message}</div>`;\n    })\n    .catch(error => {\n        console.error('Error:', error);\n        alert(`Error: ${error.message}`);\n    });\n}\n\nfunction displayRecipes() {\n    const token = localStorage.getItem('token');\n\n    fetch('http://127.0.0.1:5000/recipes', {\n        method: 'GET',\n        headers: {\n            'Authorization': `Bearer ${token}`\n        }\n    })\n    .then(response => {\n        if (response.ok) {\n            return response.json();\n        } else {\n            return response.json().then(error => {throw new Error(error.error)});\n        }\n    })\n    .then(data => {\n        const recipes = data.recipes;\n        const recipeSidebar = document.getElementById('recipe-sidebar');\n        recipeSidebar.innerHTML = '<h3>My Recipes</h3>';\n        recipes.forEach(recipe => {\n            recipeSidebar.innerHTML += `<div><strong>${recipe[1]}</strong><p>${recipe[2]}</p></div>`;\n        });\n    })\n    .catch(error => {\n        console.error('Error:', error);\n        alert(`Error: ${error.message}`);\n    });\n}\n"
+  }
+]
+========================================================================
+id: 
+file: README.md
+source_type: code
+language: md
+heading: README.md
+doc_id: f46fdfca49e6bb01b50253fbaf11ac69
+---
+# Culinary Chat Application
+
+## Project Description
+This project is a web application that allows users to chat with a culinary agent, create accounts, and store recipes. It includes functionality for user management and recipe management while providing placeholders for future integration with the culinary agent.
+
+## Architecture Summary
+The application follows a client-server architecture:
+- **Client:** User Interface is built for the users to interact with the culinary agent and manage accounts and recipes.
+- **Server:** Handles user authentication, data storage and management, providing a RESTful API to the client.
+
+## Tech Stack
+- **Backend:** Python (Flask)
+- **Frontend:** HTML, CSS, JavaScript
+- **Database:** SQLite
+
+## How to Run
+1. Install required dependencies:
+   ```bash
+   pip install flask
+   ````
+2. Navigate to the backend directory and start the server:
+   ```bash
+   cd backend
+   flask run
+   ```
+3. Open `frontend/index.html` in a web browser to use the application.
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: from flask import Flask, jsonify, request, send_from_directory
+doc_id: ad0a31a7dcb1a9d8f00cd273275baf16
+---
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+import sqlite3
+import bcrypt
+import jwt
+import datetime
+import os
+
+app = Flask(__name__)
+CORS(app)
+app.config['SECRET_KEY'] = 'your_secret_key'
+
+from graph import graph
+
+# Initialize the database
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def init_db():
+doc_id: 03381c2fcb20aee8f409037293a1da6a
+---
+def init_db():
+    conn = sqlite3.connect('user_recipes.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 username TEXT UNIQUE NOT NULL,
+                 password TEXT NOT NULL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS recipes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 user_id INTEGER NOT NULL,
+                 title TEXT NOT NULL,
+                 content TEXT NOT NULL,
+                 FOREIGN KEY(user_id) REFERENCES users(id))''')
+    conn.commit()
+    conn.close()
+
+# Utility function to verify JWT token
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def token_required(f):
+doc_id: 11c72c236c55cc03a7df952d0b3b0566
+---
+def token_required(f):
+    def decorator(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token is missing!'}), 401
+        try:
+            decoded_token = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])
+            return f(decoded_token, *args, **kwargs)
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired!'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Token is invalid!'}), 401
+    return decorator
+
+# Route to register a new user
+@app.route('/register', methods=['POST'])
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def register():
+doc_id: 6fcd0e5f3a27474c2e7be63fe427befb
+---
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    try:
+        conn = sqlite3.connect('user_recipes.db')
+        c = conn.cursor()
+        c.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                  (username, hashed_password))
+        conn.commit()
+        return jsonify({'message': 'User registered successfully'}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Username already exists'}), 400
+    finally:
+        conn.close()
+
+# Route to authenticate a user and return a JWT token
+@app.route('/login', methods=['POST'])
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def login():
+doc_id: 41e649a3800997edd6543d2240367005
+---
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    conn = sqlite3.connect('user_recipes.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = c.fetchone()
+    conn.close()
+    if user and bcrypt.checkpw(password.encode('utf-8'), user[2]):
+        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow(
+        ) + datetime.timedelta(hours=1)}, app.config['SECRET_KEY'])
+        return jsonify({'message': 'Login successful', 'token': token})
+    else:
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+# Route to add a new recipe
+@app.route('/recipes', methods=['POST'])
+@token_required
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def add_recipe(decoded_token):
+doc_id: d1aadc0ad6570fdabf532d0e8300b2b2
+---
+def add_recipe(decoded_token):
+    data = request.get_json()
+    user_id = decoded_token['user_id']
+    title = data.get('title')
+    content = data.get('content')
+    conn = sqlite3.connect('user_recipes.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)",
+              (user_id, title, content))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Recipe added successfully'}), 201
+
+# Route to retrieve recipes for a user
+@app.route('/recipes', methods=['GET'])
+@token_required
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def get_recipes(decoded_token):
+doc_id: d20edee4b9964f722c5e31678a1496cb
+---
+def get_recipes(decoded_token):
+    user_id = decoded_token['user_id']
+    conn = sqlite3.connect('user_recipes.db')
+    c = conn.cursor()
+    c.execute("SELECT id, title, content FROM recipes WHERE user_id = ?", (user_id,))
+    recipes = c.fetchall()
+    conn.close()
+    return jsonify({'recipes': recipes})
+
+@app.route('/chat', methods=['POST'])
+@token_required
+# Placeholder for the chat with the culinary agent
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def culinary_agent_chat(decoded_token):
+doc_id: 979f1060cc63b323740dfec9fa95a9bf
+---
+def culinary_agent_chat(decoded_token):
+    user_query = request.json.get('message')
+    ai_response = graph.invoke({"messages": user_query},
+                               config={"configurable": {"thread_id": "user1"}})
+
+    recipe_data = ai_response.get('recipe_data')
+
+    # Save recipe data to database if it exists
+    if recipe_data:
+        conn = sqlite3.connect('user_recipes.db')   
+        c = conn.cursor()
+        user_id = decoded_token['user_id']
+        for title, details in recipe_data.items():
+            content = f"Ingredients: {', '.join(details['ingredients'])}\nRecipe: {' '.join(details['recipe'])}"
+            c.execute("INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)",
+                      (user_id, title, content))
+        conn.commit()
+        conn.close()
+
+    response = ai_response["messages"][-1]
+
+    print(response.content)
+
+    return jsonify({'message': response.content})
+
+# Serve static image
+@app.route('/static/images/<path:filename>', methods=['GET'])
+========================================================================
+id: 
+file: frontend/styles.css
+source_type: code
+language: css
+heading: styles.css
+doc_id: 9a9264095779d0f5732d43218703b9fe
+---
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    text-align: center;
+}
+
+#user-container, #chat-container {
+    margin: 20px auto;
+    max-width: 400px;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+#recipe-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    height: 100vh;
+    width: 200px;
+    border-left: 1px solid #ddd;
+    padding: 10px;
+    background-color: #f9f9f9;
+    overflow-y: auto;
+}
+
+input {
+    width: 90%;
+    padding: 8px;
+    margin: 8px 0;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #28a745;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+#throbber {
+    display: none;
+}
+
+========================================================================
+id: 
+file: frontend/scripts.js
+source_type: code
+language: javascript
+heading: function register() {
+doc_id: fb974d3407dda0e186d58f7612c3ae6b
+---
+function register() {
+    const username = document.getElementById('register-username').value;
+    const password = document.getElementById('register-password').value;
+
+    fetch('http://127.0.0.1:5000/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+    })
+    .catch(error => console.error('Error:', error));
+}
+========================================================================
+id: 
+file: frontend/scripts.js
+source_type: code
+language: javascript
+heading: function login() {
+doc_id: 4bb79535650cb95432185f3d4d68036a
+---
+function login() {
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+
+    fetch('http://127.0.0.1:5000/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert(data.message);
+            localStorage.setItem('token', data.token); // Store the token in localStorage
+            document.getElementById('user-container').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'block';
+            document.getElementById('recipe-image').style.display = 'block';
+            displayRecipes();
+        } else {
+            alert(data.error);
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+========================================================================
+id: 
+file: frontend/scripts.js
+source_type: code
+language: javascript
+heading: function displayThrobber(display) {
+doc_id: 741ce58b04c716a83a8035baa0446102
+---
+function displayThrobber(display) {
+    const throbber = document.getElementById('throbber');
+    if (display) {
+        throbber.style.display = 'block';
+    } else {
+        throbber.style.display = 'none';
+    }
+}
+========================================================================
+id: 
+file: frontend/scripts.js
+source_type: code
+language: javascript
+heading: function sendMessage() {
+doc_id: 84a2512c2aad2b75ab7c5730dd93d69f
+---
+function sendMessage() {
+    const userInput = document.getElementById('user-input').value;
+    const chatBox = document.getElementById('chat-box');
+    const token = localStorage.getItem('token');
+    chatBox.innerHTML += `<div>User: ${userInput}</div>`;
+
+    displayThrobber(true);
+
+    fetch('http://127.0.0.1:5000/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: userInput })
+    })
+    .then(response => {
+        displayThrobber(false);
+        if (response.ok) {
+            return response.json();
+        } else {
+            return response.json().then(error => {throw new Error(error.error)});
+        }
+    })
+    .then(data => {
+        chatBox.innerHTML += `<div>Agent: ${data.message}</div>`;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(`Error: ${error.message}`);
+    });
+}
+========================================================================
+id: 
+file: frontend/scripts.js
+source_type: code
+language: javascript
+heading: function displayRecipes() {
+doc_id: 64603dd59fa9082a4737270b6664fc15
+---
+function displayRecipes() {
+    const token = localStorage.getItem('token');
+
+    fetch('http://127.0.0.1:5000/recipes', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        } else {
+            return response.json().then(error => {throw new Error(error.error)});
+        }
+    })
+    .then(data => {
+        const recipes = data.recipes;
+        const recipeSidebar = document.getElementById('recipe-sidebar');
+        recipeSidebar.innerHTML = '<h3>My Recipes</h3>';
+        recipes.forEach(recipe => {
+            recipeSidebar.innerHTML += `<div><strong>${recipe[1]}</strong><p>${recipe[2]}</p></div>`;
+        });
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(`Error: ${error.message}`);
+    });
+}
+========================================================================
+id: 
+file: frontend/index.html
+source_type: code
+language: html
+heading: index.html
+doc_id: 37f3fef90fdaed4d4d5c49befceedc9b
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Culinary Chat Application</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Welcome to the Culinary Chat Application</h1>
+    <div id="user-container">
+        <h2>Register</h2>
+        <input type="text" id="register-username" placeholder="Username">
+        <input type="password" id="register-password" placeholder="Password">
+        <button onclick="register()">Register</button>
+
+        <h2>Login</h2>
+        <input type="text" id="login-username" placeholder="Username">
+        <input type="password" id="login-password" placeholder="Password">
+        <button onclick="login()">Login</button>
+    </div>
+
+    <div id="chat-container" style="display:none;">
+        <h2>Chat with Culinary Agent</h2>
+        <div id="recipe-image" style="display:none; float:left;">
+            <img src="http://127.0.0.1:5000/static/images/recipe.png" alt="recipe" style="width:100px; height:auto; margin-right:20px;">
+        </div>
+        <div id="chat-box">
+            <!-- Chat messages will go here -->
+        </div>
+        <input type="text" id="user-input" placeholder="Type your message">
+        <button onclick="sendMessage()">Send</button>
+        <div id="throbber">Loading...</div>
+    </div>
+
+    <div id="recipe-sidebar">
+        <!-- User's recipes will be displayed here -->
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>
+
+========================================================================
+id: 
+file: backend/app.py
+source_type: code
+language: python
+heading: def get_image(filename):
+doc_id: 87ae5d906f113688fef17a2a20dcc739
+---
+def get_image(filename):
+    return send_from_directory('static/images', filename, as_attachment=False)
+
+
+if __name__ == '__main__':
+    init_db()
+    app.run(debug=True)

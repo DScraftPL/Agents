@@ -1,0 +1,79 @@
+### [markdown] TASK.md > Problem Statement
+# Problem Statement
+Develop an application that allows users to chat with a culinary agent, enabling users to create accounts and store recipes. The app should integrate with an existing culinary agent that processes JSON responses, with placeholder sections included for future integration by another developer.
+
+### [markdown] ARCHITECTURE.md > UI/UX
+# UI/UX
+The user interface will consist of a registration and login page, a dashboard where users can view and manage their recipes, and a chat interface for interacting with the culinary agent.
+
+### [code] frontend/scripts.js > function sendMessage() {
+function sendMessage() {
+    const userInput = document.getElementById('user-input').value;
+    const chatBox = document.getElementById('chat-box');
+    const token = localStorage.getItem('token');
+    chatBox.innerHTML += `<div>User: ${userInput}</div>`;
+
+    fetch('http://127.0.0.1:5000/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: userInput })
+    })
+    .then(response => response.json())
+    .then(data => {
+        chatBox.innerHTML += `<div>Agent: ${data.message}</div>`;
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+### [markdown] CODE.md > top
+```json
+[
+  {
+    "filename": "backend/app.py",
+    "content": "from flask import Flask, jsonify, request\nfrom flask_cors import CORS\nimport sqlite3\nimport bcrypt\nimport jwt\nimport datetime\n\napp = Flask(__name__)\nCORS(app)\napp.config['SECRET_KEY'] = 'your_secret_key'\n\n# Initialize the database\n\ndef init_db():\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute('''CREATE TABLE IF NOT EXISTS users (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 username TEXT UNIQUE NOT NULL,\n                 password TEXT NOT NULL)''')\n    c.execute('''CREATE TABLE IF NOT EXISTS recipes (\n                 id INTEGER PRIMARY KEY AUTOINCREMENT,\n                 user_id INTEGER NOT NULL,\n                 title TEXT NOT NULL,\n                 content TEXT NOT NULL,\n                 FOREIGN KEY(user_id) REFERENCES users(id))''')\n    conn.commit()\n    conn.close()\n\n# Route to register a new user\n@app.route('/register', methods=['POST'])\ndef register():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())\n    try:\n        conn = sqlite3.connect('user_recipes.db')\n        c = conn.cursor()\n        c.execute(\"INSERT INTO users (username, password) VALUES (?, ?)\", (username, hashed_password))\n        conn.commit()\n        return jsonify({'message': 'User registered successfully'}), 201\n    except sqlite3.IntegrityError:\n        return jsonify({'error': 'Username already exists'}), 400\n    finally:\n        conn.close()\n\n# Route to authenticate a user and return a JWT token\n@app.route('/login', methods=['POST'])\ndef login():\n    data = request.get_json()\n    username = data.get('username')\n    password = data.get('password')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT * FROM users WHERE username = ?\", (username,))\n    user = c.fetchone()\n    conn.close()\n    if user and bcrypt.checkpw(password.encode('utf-8'), user[2].encode('utf-8')):\n        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)}, app.config['SECRET_KEY'])\n        return jsonify({'message': 'Login successful', 'token': token})\n    else:\n        return jsonify({'error': 'Invalid credentials'}), 401\n\n# Route to add a new recipe\n@app.route('/recipes', methods=['POST'])\ndef add_recipe():\n    data = request.get_json()\n    token = request.headers.get('Authorization')\n    if not token:\n        return jsonify({'error': 'Token is missing!'}), 401\n    try:\n        decoded_token = jwt.decode(token.split()[1], app.config['SECRET_KEY'], algorithms=['HS256'])\n        user_id = decoded_token['user_id']\n    except:\n        return jsonify({'error': 'Token is invalid!'}), 401\n\n    title = data.get('title')\n    content = data.get('content')\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"INSERT INTO recipes (user_id, title, content) VALUES (?, ?, ?)\", (user_id, title, content))\n    conn.commit()\n    conn.close()\n    return jsonify({'message': 'Recipe added successfully'}), 201\n\n# Route to retrieve recipes for a user\n@app.route('/recipes/<int:user_id>', methods=['GET'])\ndef get_recipes(user_id):\n    conn = sqlite3.connect('user_recipes.db')\n    c = conn.cursor()\n    c.execute(\"SELECT id, title, content FROM recipes WHERE user_id = ?\", (user_id,))\n    recipes = c.fetchall()\n    conn.close()\n    return jsonify({'recipes': recipes})\n\n@app.route('/chat', methods=['POST'])\n# Placeholder for the chat with the culinary agent\n# To be implemented by another developer\n\ndef culinary_agent_chat():\n    return jsonify({'message': 'This feature is under development'})\n\nif __name__ == '__main__':\n    init_db()\n    app.run(debug=True)\n"
+  },
+  {
+    "filename": "frontend/scripts.js",
+    "content": "function register() {\n    const username = document.getElementById('register-username').value;\n    const password = document.getElementById('register-password').value;\n\n    fetch('http://127.0.0.1:5000/register', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        alert(data.message);\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction login() {\n    const username = document.getElementById('login-username').value;\n    const password = document.getElementById('login-password').value;\n\n    fetch('http://127.0.0.1:5000/login', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json'\n        },\n        body: JSON.stringify({ username, password })\n    })\n    .then(response => response.json())\n    .then(data => {\n        if (data.message) {\n            alert(data.message);\n            localStorage.setItem('token', data.token); // Store the token in localStorage\n            document.getElementById('user-container').style.display = 'none';\n            document.getElementById('chat-container').style.display = 'block';\n        } else {\n            alert(data.error);\n        }\n    })\n    .catch(error => console.error('Error:', error));\n}\n\nfunction sendMessage() {\n    const userInput = document.getElementById('user-input').value;\n    const chatBox = document.getElementById('chat-box');\n    const token = localStorage.getItem('token');\n    chatBox.innerHTML += `<div>User: ${userInput}</div>`;\n\n    fetch('http://127.0.0.1:5000/chat', {\n        method: 'POST',\n        headers: {\n            'Content-Type': 'application/json',\n            'Authorization': `Bearer ${token}`\n        },\n        body: JSON.stringify({ message: userInput })\n    })\n    .then(response => response.json())\n    .then(data => {\n        chatBox.innerHTML += `<div>Agent: ${data.message}</div>`;\n    })\n    .catch(error => console.error('Error:', error));\n}\n"
+  }
+]
+```
+
+### [code] frontend/index.html > index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Culinary Chat Application</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Welcome to the Culinary Chat Application</h1>
+    <div id="user-container">
+        <h2>Register</h2>
+        <input type="text" id="register-username" placeholder="Username">
+        <input type="password" id="register-password" placeholder="Password">
+        <button onclick="register()">Register</button>
+
+        <h2>Login</h2>
+        <input type="text" id="login-username" placeholder="Username">
+        <input type="password" id="login-password" placeholder="Password">
+        <button onclick="login()">Login</button>
+    </div>
+
+    <div id="chat-container" style="display:none;">
+        <h2>Chat with Culinary Agent</h2>
+        <div id="chat-box">
+            <!-- Chat messages will go here -->
+        </div>
+        <input type="text" id="user-input" placeholder="Type your message">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

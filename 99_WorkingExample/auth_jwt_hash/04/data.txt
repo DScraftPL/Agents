@@ -1,0 +1,24 @@
+### [markdown] TASK.md > Objectives
+# Objectives
+- Integrate JWT-based authorization across all application modules to ensure only authenticated and authorized users can access specific features.
+- Ensure the Chat Module and Recipe Management Module validate JWT tokens for user access.
+- Modify the existing code to check for valid JWT tokens before allowing any operations that require user authentication.
+
+### [markdown] ARCHITECTURE.md > Modules
+# Modules
+- **Authentication Module**: Handles user registration and login functionality with JWT token issuance.
+- **Chat Module**: Provides an interface for users to send messages to the agent.
+- **Recipe Management Module**: Allows authenticated users to store and retrieve recipes.
+- **JWT Verification**: Ensures JWT tokens are valid for access to specific routes.
+
+### [markdown] ARCHITECTURE.md > Description
+# Description
+The system is a web application where users can create accounts, log in, and chat with a culinary agent. The backend is protected through JWT authentication to ensure that only authorized users can interact with the chat endpoint and manage their stored recipes.
+
+### [markdown] ARCHITECTURE.md > Architecture
+# Architecture
+Client-Server: This pattern suitably separates concerns between the client-side interface handling user interactions and the server-side business logic and data persistence, enforcing security with JWT-based authentication.
+
+### [markdown] TASK.md > Problem Statement
+# Problem Statement
+The application currently lacks proper authorization controls that enforce access restrictions based on JWT tokens for different modules. This creates a risk where unauthorized users might access restricted functionalities.
